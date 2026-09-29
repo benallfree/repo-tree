@@ -15,8 +15,17 @@ export interface RepoStatusInput {
 }
 
 export type TreeNode =
-  | { kind: 'folder'; name: string; children: TreeNode[] }
+  | { kind: 'folder'; name: string; children: TreeNode[]; rootPath?: string }
   | { kind: 'repo'; name: string; rootPath: string }
+
+export type SortMode = 'name' | 'wip'
+
+export function repoRootPath(node: TreeNode): string | undefined {
+  if (node.kind === 'repo') {
+    return node.rootPath
+  }
+  return node.rootPath
+}
 
 function normalizeRoot(p: string): string {
   return path.normalize(p.replace(/\/+$/, ''))
@@ -48,39 +57,151 @@ export function commonPathPrefix(paths: string[]): string {
   return prefix
 }
 
+function findFolder(nodes: TreeNode[], name: string): Extract<TreeNode, { kind: 'folder' }> | undefined {
+  const folder = nodes.find((n) => n.kind === 'folder' && n.name === name)
+  return folder?.kind === 'folder' ? folder : undefined
+}
+
+function promoteRepoToFolder(
+  root: TreeNode[],
+  name: string
+): Extract<TreeNode, { kind: 'folder' }> {
+  const index = root.findIndex((n) => n.kind === 'repo' && n.name === name)
+  if (index >= 0) {
+    const repo = root[index] as Extract<TreeNode, { kind: 'repo' }>
+    const folder: Extract<TreeNode, { kind: 'folder' }> = {
+      kind: 'folder',
+      name,
+      children: [],
+      rootPath: repo.rootPath,
+    }
+    root.splice(index, 1, folder)
+    return folder
+  }
+  const folder: Extract<TreeNode, { kind: 'folder' }> = { kind: 'folder', name, children: [] }
+  root.push(folder)
+  return folder
+}
+
 function insertRepo(root: TreeNode[], segments: string[], rootPath: string): void {
   if (segments.length === 0) {
     return
   }
   if (segments.length === 1) {
-    root.push({ kind: 'repo', name: segments[0], rootPath })
-    sortTreeLevel(root)
+    const name = segments[0]
+    const existingFolder = findFolder(root, name)
+    if (existingFolder) {
+      existingFolder.rootPath = rootPath
+      return
+    }
+    root.push({ kind: 'repo', name, rootPath })
     return
   }
   const [head, ...rest] = segments
-  let folder = root.find((n) => n.kind === 'folder' && n.name === head) as
-    | Extract<TreeNode, { kind: 'folder' }>
-    | undefined
+  let folder = findFolder(root, head)
   if (!folder) {
-    folder = { kind: 'folder', name: head, children: [] }
-    root.push(folder)
+    folder = promoteRepoToFolder(root, head)
   }
   insertRepo(folder.children, rest, rootPath)
-  sortTreeLevel(root)
 }
 
-function sortTreeLevel(nodes: TreeNode[]): void {
-  nodes.sort((a, b) => {
-    if (a.kind !== b.kind) {
-      return a.kind === 'folder' ? -1 : 1
-    }
-    return a.name.localeCompare(b.name)
-  })
-  for (const node of nodes) {
-    if (node.kind === 'folder') {
-      sortTreeLevel(node.children)
+export function repoHasWorkingChanges(status: RepoStatusInput): boolean {
+  return status.indexChanges + status.workingTreeChanges + status.mergeChanges > 0
+}
+
+/** True when this node’s repo (if any) or any nested repo has local changes. */
+export function treeHasDirtyRepo(
+  node: TreeNode,
+  isDirty: (rootPath: string) => boolean
+): boolean {
+  const own = repoRootPath(node)
+  if (own && isDirty(own)) {
+    return true
+  }
+  if (node.kind === 'folder') {
+    return node.children.some((child) => treeHasDirtyRepo(child, isDirty))
+  }
+  return false
+}
+
+function nodeSortKey(node: TreeNode): string {
+  return node.name
+}
+
+function compareNodes(
+  a: TreeNode,
+  b: TreeNode,
+  sortMode: SortMode,
+  wipRank: (rootPath: string) => number
+): number {
+  const aFolder = a.kind === 'folder'
+  const bFolder = b.kind === 'folder'
+  if (aFolder !== bFolder) {
+    return aFolder ? -1 : 1
+  }
+  if (sortMode === 'wip') {
+    const aPath = repoRootPath(a)
+    const bPath = repoRootPath(b)
+    if (aPath && bPath) {
+      const byWip = wipRank(bPath) - wipRank(aPath)
+      if (byWip !== 0) {
+        return byWip
+      }
     }
   }
+  return nodeSortKey(a).localeCompare(nodeSortKey(b))
+}
+
+export function sortTreeNodes(
+  nodes: TreeNode[],
+  sortMode: SortMode,
+  wipRank: (rootPath: string) => number
+): void {
+  nodes.sort((a, b) => compareNodes(a, b, sortMode, wipRank))
+  for (const node of nodes) {
+    if (node.kind === 'folder') {
+      sortTreeNodes(node.children, sortMode, wipRank)
+    }
+  }
+}
+
+export function flattenRepositoryTree(nodes: TreeNode[]): TreeNode[] {
+  const repos: Extract<TreeNode, { kind: 'repo' }>[] = []
+  const walk = (list: TreeNode[]): void => {
+    for (const node of list) {
+      if (node.kind === 'repo') {
+        repos.push(node)
+      } else {
+        if (node.rootPath) {
+          repos.push({ kind: 'repo', name: node.name, rootPath: node.rootPath })
+        }
+        walk(node.children)
+      }
+    }
+  }
+  walk(nodes)
+  return repos
+}
+
+export function pruneUnchangedTree(
+  nodes: TreeNode[],
+  isDirty: (rootPath: string) => boolean
+): TreeNode[] {
+  const out: TreeNode[] = []
+  for (const node of nodes) {
+    if (node.kind === 'repo') {
+      if (isDirty(node.rootPath)) {
+        out.push(node)
+      }
+      continue
+    }
+    const keepFolder = node.rootPath ? isDirty(node.rootPath) : false
+    const children = pruneUnchangedTree(node.children, isDirty)
+    if (children.length > 0 || keepFolder) {
+      out.push({ kind: 'folder', name: node.name, children, rootPath: node.rootPath })
+    }
+  }
+  return out
 }
 
 export function buildRepositoryTree(repos: RepoInput[]): TreeNode[] {
@@ -92,7 +213,6 @@ export function buildRepositoryTree(repos: RepoInput[]): TreeNode[] {
     for (const rootPath of normalized) {
       root.push({ kind: 'repo', name: path.basename(rootPath), rootPath })
     }
-    sortTreeLevel(root)
     return root
   }
   const prefixSegs = splitSegments(prefix)
@@ -105,7 +225,6 @@ export function buildRepositoryTree(repos: RepoInput[]): TreeNode[] {
       insertRepo(root, relative, rootPath)
     }
   }
-  sortTreeLevel(root)
   return root
 }
 

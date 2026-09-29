@@ -3,7 +3,11 @@ import { describe, it } from 'node:test'
 import {
   buildRepositoryTree,
   commonPathPrefix,
+  flattenRepositoryTree,
   formatRepoDescription,
+  pruneUnchangedTree,
+  sortTreeNodes,
+  treeHasDirtyRepo,
   type RepoInput,
 } from './tree'
 
@@ -63,6 +67,29 @@ describe('buildRepositoryTree', () => {
     assert.ok(b && b.kind === 'folder' && b.children.some((c) => c.kind === 'repo'))
   })
 
+  it('merges a parent repo with nested checkouts under one folder', () => {
+    const tree = buildRepositoryTree([
+      { rootPath: `${reposRoot}/meshenvy/lobbs` },
+      { rootPath: `${reposRoot}/meshenvy/lobbs/meshtastic` },
+      { rootPath: `${reposRoot}/meshenvy/meshforge` },
+      { rootPath: `${reposRoot}/christensen` },
+    ])
+    const meshenvy = tree.find((n) => n.kind === 'folder' && n.name === 'meshenvy')
+    assert.ok(meshenvy && meshenvy.kind === 'folder')
+    const lobbs = meshenvy.children.find((c) => c.kind === 'folder' && c.name === 'lobbs')
+    assert.ok(lobbs && lobbs.kind === 'folder')
+    assert.equal(lobbs.rootPath, `${reposRoot}/meshenvy/lobbs`)
+    assert.equal(lobbs.children.length, 1)
+    assert.equal(lobbs.children[0].kind, 'repo')
+    assert.equal(lobbs.children[0].name, 'meshtastic')
+    assert.ok(
+      meshenvy.children.some(
+        (c) => c.name === 'meshforge' && c.kind === 'repo' && c.rootPath.endsWith('/meshenvy/meshforge')
+      )
+    )
+    assert.ok(!lobbs.children.some((c) => c.name === 'meshforge'))
+  })
+
   it('places repo outside common prefix at top level', () => {
     const tree = buildRepositoryTree([
       { rootPath: `${reposRoot}/jeep` },
@@ -74,6 +101,76 @@ describe('buildRepositoryTree', () => {
     const other = tree.find((n) => n.kind === 'repo' && n.name === 'other-checkout')
     assert.ok(other && other.kind === 'repo')
     assert.equal(other.rootPath, '/tmp/other-checkout')
+  })
+})
+
+describe('pruneUnchangedTree', () => {
+  it('keeps folder ancestors of dirty repos only', () => {
+    const tree = buildRepositoryTree([
+      { rootPath: `${reposRoot}/meshenvy/envybot` },
+      { rootPath: `${reposRoot}/meshenvy/lobbs` },
+      { rootPath: `${reposRoot}/christensen` },
+    ])
+    const dirty = new Set([`${reposRoot}/meshenvy/envybot`])
+    const pruned = pruneUnchangedTree(tree, (p) => dirty.has(p))
+    assert.equal(pruned.length, 1)
+    assert.equal(pruned[0].kind, 'folder')
+    assert.equal(pruned[0].name, 'meshenvy')
+    assert.equal(pruned[0].children.length, 1)
+    assert.equal(pruned[0].children[0].kind, 'repo')
+    assert.equal(pruned[0].children[0].name, 'envybot')
+  })
+})
+
+describe('treeHasDirtyRepo', () => {
+  it('marks ancestor folders when a nested repo is dirty', () => {
+    const tree = buildRepositoryTree([
+      { rootPath: `${reposRoot}/meshenvy/lobbs` },
+      { rootPath: `${reposRoot}/meshenvy/lobbs/meshtastic` },
+      { rootPath: `${reposRoot}/christensen` },
+    ])
+    const meshenvy = tree.find((n) => n.kind === 'folder' && n.name === 'meshenvy')
+    assert.ok(meshenvy && meshenvy.kind === 'folder')
+    const lobbs = meshenvy.children.find((n) => n.kind === 'folder' && n.name === 'lobbs')
+    assert.ok(lobbs && lobbs.kind === 'folder')
+    const meshtastic = lobbs.children.find((n) => n.kind === 'repo' && n.name === 'meshtastic')
+    assert.ok(meshtastic && meshtastic.kind === 'repo')
+    const dirtyPath = `${reposRoot}/meshenvy/lobbs/meshtastic`
+    const isDirty = (p: string) => p === dirtyPath
+    assert.equal(treeHasDirtyRepo(meshtastic, isDirty), true)
+    assert.equal(treeHasDirtyRepo(lobbs, isDirty), true)
+    assert.equal(treeHasDirtyRepo(meshenvy, isDirty), true)
+    const christensen = tree.find((n) => n.kind === 'repo' && n.name === 'christensen')
+    assert.ok(christensen)
+    assert.equal(treeHasDirtyRepo(christensen, isDirty), false)
+  })
+})
+
+describe('flattenRepositoryTree', () => {
+  it('collects all repo leaves', () => {
+    const tree = buildRepositoryTree([
+      { rootPath: `${reposRoot}/meshenvy/envybot` },
+      { rootPath: `${reposRoot}/christensen` },
+    ])
+    const flat = flattenRepositoryTree(tree)
+    assert.equal(flat.length, 2)
+    assert.ok(flat.every((n) => n.kind === 'repo'))
+  })
+})
+
+describe('sortTreeNodes', () => {
+  it('sorts repos by recent wip rank at each level', () => {
+    const tree = buildRepositoryTree([
+      { rootPath: `${reposRoot}/meshenvy/lobbs` },
+      { rootPath: `${reposRoot}/meshenvy/envybot` },
+    ])
+    const rank = (p: string) =>
+      p.endsWith('envybot') ? 200 : p.endsWith('lobbs') ? 100 : 0
+    sortTreeNodes(tree, 'wip', rank)
+    assert.equal(tree.length, 2)
+    assert.equal(tree[0].kind, 'repo')
+    assert.equal(tree[0].name, 'envybot')
+    assert.equal(tree[1].name, 'lobbs')
   })
 })
 

@@ -2,7 +2,7 @@
   "name": "repo-tree",
   "displayName": "Repository Tree",
   "description": "Nested tree of git repositories in the Source Control sidebar",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "benallfree",
   "engines": {
     "vscode": "^1.85.0"
@@ -26,23 +26,119 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "repoTree.setLayoutTree",
+        "title": "Tree Layout",
+        "icon": "$(list-tree)"
+      },
+      {
+        "command": "repoTree.setLayoutFlat",
+        "title": "Flat Layout",
+        "icon": "$(list-flat)"
+      },
+      {
+        "command": "repoTree.setSortName",
+        "title": "Sort by Name",
+        "icon": "$(sort-precedence)"
+      },
+      {
+        "command": "repoTree.setSortWip",
+        "title": "Sort by Recent WIP",
+        "icon": "$(history)"
+      },
+      {
+        "command": "repoTree.toggleHideUnchanged",
+        "title": "Hide Unchanged Repositories",
+        "icon": "$(filter)",
+        "toggled": {
+          "condition": "repoTree.hideUnchanged",
+          "icon": "$(filter-filled)",
+          "title": "Show All Repositories",
+          "tooltip": "Showing repositories with local changes only"
+        }
+      },
+      {
         "command": "repoTree.revealInExplorer",
         "title": "Reveal in Explorer"
       },
       {
         "command": "repoTree.openInNewWindow",
         "title": "Open Repository in New Window"
+      },
+      {
+        "command": "repoTree.gitSync",
+        "title": "Sync",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "repoTree.gitPull",
+        "title": "Pull",
+        "icon": "$(arrow-down)"
+      },
+      {
+        "command": "repoTree.gitPush",
+        "title": "Push",
+        "icon": "$(arrow-up)"
+      },
+      {
+        "command": "repoTree.gitCommit",
+        "title": "Commit",
+        "icon": "$(check)"
       }
     ],
     "menus": {
       "view/title": [
         {
+          "command": "repoTree.setLayoutTree",
+          "when": "view == repoTree.repositories && repoTree.layout == flat",
+          "group": "navigation@1"
+        },
+        {
+          "command": "repoTree.setLayoutFlat",
+          "when": "view == repoTree.repositories && repoTree.layout == tree",
+          "group": "navigation@1"
+        },
+        {
+          "command": "repoTree.setSortName",
+          "when": "view == repoTree.repositories && repoTree.sortMode == wip",
+          "group": "navigation@2"
+        },
+        {
+          "command": "repoTree.setSortWip",
+          "when": "view == repoTree.repositories && repoTree.sortMode == name",
+          "group": "navigation@2"
+        },
+        {
+          "command": "repoTree.toggleHideUnchanged",
+          "when": "view == repoTree.repositories",
+          "group": "navigation@3"
+        },
+        {
           "command": "repoTree.refresh",
           "when": "view == repoTree.repositories",
-          "group": "navigation"
+          "group": "navigation@4"
         }
       ],
       "view/item/context": [
+        {
+          "command": "repoTree.gitSync",
+          "when": "view == repoTree.repositories && viewItem == repoTree.repo && config.git.enabled && !git.missing",
+          "group": "inline@1"
+        },
+        {
+          "command": "repoTree.gitPull",
+          "when": "view == repoTree.repositories && viewItem == repoTree.repo && config.git.enabled && !git.missing",
+          "group": "inline@2"
+        },
+        {
+          "command": "repoTree.gitPush",
+          "when": "view == repoTree.repositories && viewItem == repoTree.repo && config.git.enabled && !git.missing",
+          "group": "inline@3"
+        },
+        {
+          "command": "repoTree.gitCommit",
+          "when": "view == repoTree.repositories && viewItem == repoTree.repo && config.git.enabled && !git.missing",
+          "group": "inline@4"
+        },
         {
           "command": "repoTree.revealInExplorer",
           "when": "view == repoTree.repositories && viewItem == repoTree.repo",

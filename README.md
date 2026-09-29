@@ -21,3 +21,13 @@ Open this folder in Cursor, run **Run Extension** (`.vscode/launch.json`). The E
 Reload the window. The script symlinks this repo into `~/.cursor/extensions/benallfree.repo-tree-<version>`.
 
 Hide the built-in **Repositories** section from Source Control → `...` → Views if you only want the tree.
+
+### View toolbar
+
+| Control | Action |
+| --- | --- |
+| Tree / flat | Toggle nested folders vs a single sorted list |
+| Sort | Name, or recent WIP (last dirty activity in this window) |
+| Filter | Hide clean repos; tree mode keeps parent folders |
+
+Click a repo to reveal it in the Explorer. Each repo row has inline sync, pull, push, and commit actions (Git extension commands).
