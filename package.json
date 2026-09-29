@@ -83,6 +83,40 @@
         "command": "repoTree.gitCommit",
         "title": "Commit",
         "icon": "$(check)"
+      },
+      {
+        "command": "repoTree.stageFile",
+        "title": "Stage",
+        "icon": "$(add)"
+      },
+      {
+        "command": "repoTree.unstageFile",
+        "title": "Unstage",
+        "icon": "$(remove)"
+      },
+      {
+        "command": "repoTree.discardFile",
+        "title": "Discard Changes",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "repoTree.stageAll",
+        "title": "Stage All Changes",
+        "icon": "$(add)"
+      },
+      {
+        "command": "repoTree.unstageAll",
+        "title": "Unstage All",
+        "icon": "$(remove)"
+      },
+      {
+        "command": "repoTree.openDiff",
+        "title": "Open Diff"
+      },
+      {
+        "command": "repoTree.openFile",
+        "title": "Open File",
+        "icon": "$(go-to-file)"
       }
     ],
     "menus": {
@@ -148,6 +182,36 @@
           "command": "repoTree.openInNewWindow",
           "when": "view == repoTree.repositories && viewItem == repoTree.repo",
           "group": "navigation@2"
+        },
+        {
+          "command": "repoTree.stageAll",
+          "when": "view == repoTree.repositories && viewItem == repoTree.repo && config.git.enabled && !git.missing",
+          "group": "navigation@3"
+        },
+        {
+          "command": "repoTree.unstageAll",
+          "when": "view == repoTree.repositories && viewItem == repoTree.repo && config.git.enabled && !git.missing",
+          "group": "navigation@4"
+        },
+        {
+          "command": "repoTree.openFile",
+          "when": "view == repoTree.repositories && viewItem =~ /^repoTree.scmFile\\./ && config.git.enabled && !git.missing",
+          "group": "inline@1"
+        },
+        {
+          "command": "repoTree.stageFile",
+          "when": "view == repoTree.repositories && (viewItem == repoTree.scmFile.changes || viewItem == repoTree.scmFile.both) && config.git.enabled && !git.missing",
+          "group": "inline@2"
+        },
+        {
+          "command": "repoTree.unstageFile",
+          "when": "view == repoTree.repositories && (viewItem == repoTree.scmFile.staged || viewItem == repoTree.scmFile.both) && config.git.enabled && !git.missing",
+          "group": "inline@3"
+        },
+        {
+          "command": "repoTree.discardFile",
+          "when": "view == repoTree.repositories && viewItem =~ /^repoTree.scmFile\\./ && config.git.enabled && !git.missing",
+          "group": "inline@4"
         }
       ]
     }
@@ -155,7 +219,7 @@
   "scripts": {
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "test": "npm run compile && node --test out/tree.test.js",
+    "test": "npm run compile && node --test out/tree.test.js out/scmTree.test.js",
     "vscode:prepublish": "npm run compile"
   },
   "devDependencies": {

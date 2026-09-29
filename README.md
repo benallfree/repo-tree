@@ -30,4 +30,4 @@ Hide the built-in **Repositories** section from Source Control → `...` → Vie
 | Sort | Name, or recent WIP (last dirty activity in this window) |
 | Filter | Hide clean repos; tree mode keeps parent folders |
 
-Click a repo to reveal it in the Explorer. Each repo row has inline sync, pull, push, and commit actions (Git extension commands).
+Click a dirty repo to expand nested changed files (path folders in tree layout). Click a changed file to open its diff; use the go-to-file icon to open the working copy. Inline stage, unstage, and discard on file rows. Stage All and Unstage All are on the repo context menu. Repo rows keep sync, pull, push, and commit without driving the built-in Changes list.
