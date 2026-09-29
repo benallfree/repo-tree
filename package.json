@@ -1,0 +1,70 @@
+{
+  "name": "repo-tree",
+  "displayName": "Repository Tree",
+  "description": "Nested tree of git repositories in the Source Control sidebar",
+  "version": "0.1.0",
+  "publisher": "benallfree",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": ["onView:repoTree.repositories"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "views": {
+      "scm": [
+        {
+          "id": "repoTree.repositories",
+          "name": "Repository Tree"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "repoTree.refresh",
+        "title": "Refresh Repository Tree",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "repoTree.revealInExplorer",
+        "title": "Reveal in Explorer"
+      },
+      {
+        "command": "repoTree.openInNewWindow",
+        "title": "Open Repository in New Window"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "repoTree.refresh",
+          "when": "view == repoTree.repositories",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "repoTree.revealInExplorer",
+          "when": "view == repoTree.repositories && viewItem == repoTree.repo",
+          "group": "navigation@1"
+        },
+        {
+          "command": "repoTree.openInNewWindow",
+          "when": "view == repoTree.repositories && viewItem == repoTree.repo",
+          "group": "navigation@2"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "test": "npm run compile && node --test out/tree.test.js",
+    "vscode:prepublish": "npm run compile"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.7.0"
+  }
+}
