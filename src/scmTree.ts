@@ -1,5 +1,5 @@
 import * as path from 'path'
-import type { FileChangeState } from './repoTreeNode'
+import type { FileChangeState, ScmSection } from './repoTreeNode'
 
 export interface GitChangeLike {
   uri: { fsPath: string }
@@ -34,6 +34,35 @@ function addState(map: Map<string, Set<FileChangeState>>, relativePath: string, 
     map.set(relativePath, set)
   }
   set.add(state)
+}
+
+export function filesForSection(merged: MergedChangeFile[], section: ScmSection): MergedChangeFile[] {
+  const key: FileChangeState =
+    section === 'staged' ? 'staged' : section === 'merge' ? 'merge' : 'changes'
+  return merged.filter((f) => f.states.includes(key))
+}
+
+export function repoSectionHasFiles(
+  merged: MergedChangeFile[],
+  section: ScmSection
+): boolean {
+  return filesForSection(merged, section).length > 0
+}
+
+export const SCM_SECTION_ORDER: ScmSection[] = ['staged', 'changes', 'merge']
+
+/** Which SCM resource group to use for diff/decoration when a path has multiple states. */
+export function primaryScmSection(states: FileChangeState[]): ScmSection {
+  if (states.includes('merge')) {
+    return 'merge'
+  }
+  if (states.includes('changes')) {
+    return 'changes'
+  }
+  if (states.includes('staged')) {
+    return 'staged'
+  }
+  return 'changes'
 }
 
 export function mergeRepoChanges(

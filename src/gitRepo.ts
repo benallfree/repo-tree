@@ -1,8 +1,8 @@
 import * as path from 'path'
 import * as vscode from 'vscode'
-import type { FileChangeState, RepoTreeNode } from './repoTreeNode'
+import type { FileChangeState, RepoTreeNode, ScmSection } from './repoTreeNode'
 import { nodeRootPath } from './repoTreeNode'
-import { pathsFromChanges, relativeRepoPath } from './scmTree'
+import { pathsFromChanges } from './scmTree'
 
 export interface GitChange {
   uri: vscode.Uri
@@ -15,9 +15,27 @@ export interface GitRepositoryState {
   mergeChanges: readonly GitChange[]
 }
 
+export interface GitScmResource {
+  resourceUri: vscode.Uri
+  openChange(): Promise<void>
+  openFile(): Promise<void>
+  letter?: string
+  strikeThrough?: boolean
+  tooltip?: string
+}
+
+export interface GitScmResourceGroup {
+  resourceStates: GitScmResource[]
+}
+
 export interface GitRepositoryRef {
   rootUri: vscode.Uri
   state: GitRepositoryState
+  inputBox?: { value: string }
+  indexGroup?: GitScmResourceGroup
+  workingTreeGroup?: GitScmResourceGroup
+  mergeGroup?: GitScmResourceGroup
+  untrackedGroup?: GitScmResourceGroup
   add(paths: string[]): Promise<void>
   revert(paths: string[]): Promise<void>
   clean(paths: string[]): Promise<void>
@@ -56,30 +74,35 @@ export function findGitRepository(
   return git.repositories.find((r) => pathsEqual(r.rootUri.fsPath, rootPath))
 }
 
-function findChangeInList(
-  repoRoot: string,
-  changes: readonly GitChange[],
-  relativePath: string
-): GitChange | undefined {
-  return changes.find((c) => relativeRepoPath(repoRoot, c.uri.fsPath) === relativePath)
+export function anyRepositoryHasStaged(git: GitApiLite | undefined): boolean {
+  if (!git) {
+    return false
+  }
+  return git.repositories.some((r) => r.state.indexChanges.length > 0)
 }
 
-function pickChangeForDiff(
+function absPathForRelative(rootPath: string, relativePath: string): string {
+  return path.join(rootPath, ...relativePath.split('/'))
+}
+
+export function findScmResource(
   repo: GitRepositoryRef,
   relativePath: string,
-  states: FileChangeState[]
-): GitChange | undefined {
-  const root = repo.rootUri.fsPath
-  if (states.includes('changes')) {
-    return findChangeInList(root, repo.state.workingTreeChanges, relativePath)
+  section: ScmSection
+): GitScmResource | undefined {
+  const target = absPathForRelative(repo.rootUri.fsPath, relativePath)
+  const match = (r: GitScmResource) => pathsEqual(r.resourceUri.fsPath, target)
+
+  if (section === 'staged') {
+    return repo.indexGroup?.resourceStates.find(match)
   }
-  if (states.includes('staged')) {
-    return findChangeInList(root, repo.state.indexChanges, relativePath)
+  if (section === 'merge') {
+    return repo.mergeGroup?.resourceStates.find(match)
   }
-  if (states.includes('merge')) {
-    return findChangeInList(root, repo.state.mergeChanges, relativePath)
-  }
-  return undefined
+  return (
+    repo.workingTreeGroup?.resourceStates.find(match) ??
+    repo.untrackedGroup?.resourceStates.find(match)
+  )
 }
 
 export async function runGitRepoCommand(
@@ -127,7 +150,8 @@ export async function discardPaths(
   getGit: () => GitApiLite | undefined,
   rootPath: string,
   paths: string[],
-  states: FileChangeState[]
+  section: ScmSection,
+  _states: FileChangeState[]
 ): Promise<void> {
   const repo = findGitRepository(getGit(), rootPath)
   if (!repo || paths.length === 0) {
@@ -142,7 +166,7 @@ export async function discardPaths(
   if (ok !== 'Discard') {
     return
   }
-  if (states.includes('staged')) {
+  if (section === 'staged') {
     await repo.revert(paths)
     await repo.clean(paths)
   } else {
@@ -182,39 +206,89 @@ export async function commitRepoWithPrompt(
   if (!rootPath) {
     return
   }
+  await commitRepository(getGit, rootPath, undefined)
+}
+
+export async function resolveCommitRootPath(
+  getGit: () => GitApiLite | undefined,
+  selectionRootPath: string | undefined
+): Promise<string | undefined> {
+  const git = getGit()
+  if (!git) {
+    return undefined
+  }
+
+  const hasStaged = (root: string) => {
+    const repo = findGitRepository(git, root)
+    return (repo?.state.indexChanges.length ?? 0) > 0
+  }
+
+  if (selectionRootPath && hasStaged(selectionRootPath)) {
+    return selectionRootPath
+  }
+
+  const stagedRepos = git.repositories.filter((r) => r.state.indexChanges.length > 0)
+  if (stagedRepos.length === 0) {
+    return undefined
+  }
+  if (stagedRepos.length === 1) {
+    return stagedRepos[0].rootUri.fsPath
+  }
+
+  const pick = await vscode.window.showQuickPick(
+    stagedRepos.map((r) => ({
+      label: path.basename(r.rootUri.fsPath),
+      description: r.rootUri.fsPath,
+      rootPath: r.rootUri.fsPath,
+    })),
+    { placeHolder: 'Choose repository to commit' }
+  )
+  return pick?.rootPath
+}
+
+async function commitRepository(
+  getGit: () => GitApiLite | undefined,
+  rootPath: string,
+  messageOverride: string | undefined
+): Promise<void> {
   const repo = findGitRepository(getGit(), rootPath)
   if (!repo) {
     return
   }
 
-  const message = await vscode.window.showInputBox({
-    prompt: 'Commit message',
-    placeHolder: 'Message',
-    validateInput: (v) => (v.trim() ? undefined : 'Message required'),
-  })
+  let message = messageOverride?.trim()
+  if (!message) {
+    message = repo.inputBox?.value?.trim()
+  }
+  if (!message) {
+    message = await vscode.window.showInputBox({
+      prompt: 'Commit message',
+      placeHolder: 'Message',
+      validateInput: (v) => (v.trim() ? undefined : 'Message required'),
+    })
+  }
   if (!message?.trim()) {
     return
   }
 
-  const staged = repo.state.indexChanges.length
-  const unstaged = repo.state.workingTreeChanges.length
-
-  if (staged === 0 && unstaged > 0) {
-    const pick = await vscode.window.showInformationMessage(
-      'Nothing staged. Stage all changes and commit?',
-      'Stage All and Commit',
-      'Cancel'
-    )
-    if (pick !== 'Stage All and Commit') {
-      return
-    }
-    await stageAllWorking(getGit, rootPath)
-  } else if (staged === 0) {
-    void vscode.window.showInformationMessage('Nothing to commit')
+  if (repo.state.indexChanges.length === 0) {
+    void vscode.window.showInformationMessage('Nothing staged to commit')
     return
   }
 
   await repo.commit(message.trim())
+}
+
+export async function commitFromTitle(
+  getGit: () => GitApiLite | undefined,
+  selectionRootPath: string | undefined
+): Promise<void> {
+  const rootPath = await resolveCommitRootPath(getGit, selectionRootPath)
+  if (!rootPath) {
+    void vscode.window.showInformationMessage('No staged changes to commit')
+    return
+  }
+  await commitRepository(getGit, rootPath, undefined)
 }
 
 export async function openChangeDiff(
@@ -224,19 +298,20 @@ export async function openChangeDiff(
   if (item?.node.kind !== 'scmFile') {
     return
   }
-  const { rootPath, relativePath, states } = item.node
+  const { rootPath, relativePath, section } = item.node
   const repo = findGitRepository(getGit(), rootPath)
   if (!repo) {
     return
   }
-  const change = pickChangeForDiff(repo, relativePath, states)
-  if (!change) {
+
+  const resource = findScmResource(repo, relativePath, section)
+  if (resource) {
+    await resource.openChange()
     return
   }
-  const right = change.uri
-  const left = change.originalUri ?? change.uri
-  const title = `${path.basename(relativePath)} (Working Tree)`
-  await vscode.commands.executeCommand('vscode.diff', left, right, title, { preview: true })
+
+  const uri = vscode.Uri.file(absPathForRelative(rootPath, relativePath))
+  await vscode.commands.executeCommand('git.openChange', uri)
 }
 
 export async function openChangeFile(
@@ -246,30 +321,32 @@ export async function openChangeFile(
   if (item?.node.kind !== 'scmFile') {
     return
   }
-  const repo = findGitRepository(getGit(), item.node.rootPath)
+  const { rootPath, relativePath, section } = item.node
+  const repo = findGitRepository(getGit(), rootPath)
   if (!repo) {
     return
   }
-  const change = pickChangeForDiff(repo, item.node.relativePath, item.node.states)
-  const uri = change?.uri ?? vscode.Uri.file(path.join(item.node.rootPath, item.node.relativePath))
-  await vscode.commands.executeCommand('vscode.open', uri)
+
+  const resource = findScmResource(repo, relativePath, section)
+  if (resource) {
+    await resource.openFile()
+    return
+  }
+
+  const uri = vscode.Uri.file(absPathForRelative(rootPath, relativePath))
+  await vscode.commands.executeCommand('git.openFile', uri)
 }
 
 export function scmFileContextValue(states: FileChangeState[]): string {
-  const hasStaged = states.includes('staged')
-  const hasChanges = states.includes('changes')
-  const hasMerge = states.includes('merge')
-  if (hasStaged && hasChanges) {
-    return 'repoTree.scmFile.both'
+  const parts = ['repoTree.scmFile']
+  if (states.includes('staged')) {
+    parts.push('staged')
   }
-  if (hasStaged) {
-    return 'repoTree.scmFile.staged'
+  if (states.includes('changes')) {
+    parts.push('changes')
   }
-  if (hasChanges) {
-    return 'repoTree.scmFile.changes'
+  if (states.includes('merge')) {
+    parts.push('merge')
   }
-  if (hasMerge) {
-    return 'repoTree.scmFile.merge'
-  }
-  return 'repoTree.scmFile.changes'
+  return parts.join('.')
 }

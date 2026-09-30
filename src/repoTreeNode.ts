@@ -3,12 +3,15 @@ import { repoRootPath } from './tree'
 
 export type FileChangeState = 'staged' | 'changes' | 'merge'
 
+export type ScmSection = 'staged' | 'changes' | 'merge'
+
 export type RepoTreeNode =
   | TreeNode
   | { kind: 'scmChangeDir'; rootPath: string; relativeDir: string; name: string }
   | {
       kind: 'scmFile'
       rootPath: string
+      section: ScmSection
       relativePath: string
       name: string
       states: FileChangeState[]
