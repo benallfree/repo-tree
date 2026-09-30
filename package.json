@@ -2,7 +2,7 @@
   "name": "repo-tree",
   "displayName": "Repository Tree",
   "description": "Nested tree of git repositories in the Source Control sidebar",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "benallfree",
   "repository": {
     "type": "git",
@@ -96,6 +96,10 @@
         "command": "repoTree.revertFolder",
         "title": "Revert",
         "icon": "$(discard)"
+      },
+      {
+        "command": "repoTree.addToGitignore",
+        "title": "Add to .gitignore"
       },
       {
         "command": "repoTree.openDiff",
@@ -192,9 +196,24 @@
           "group": "inline@1"
         },
         {
+          "command": "repoTree.openFile",
+          "when": "view == repoTree.repositories && viewItem == repoTree.scmFile",
+          "group": "navigation@2"
+        },
+        {
+          "command": "repoTree.openDiff",
+          "when": "view == repoTree.repositories && viewItem == repoTree.scmFile",
+          "group": "navigation@1"
+        },
+        {
           "command": "repoTree.revertFile",
           "when": "view == repoTree.repositories && viewItem == repoTree.scmFile && config.git.enabled && !git.missing",
           "group": "inline@2"
+        },
+        {
+          "command": "repoTree.revertFile",
+          "when": "view == repoTree.repositories && viewItem == repoTree.scmFile",
+          "group": "navigation@4"
         },
         {
           "command": "repoTree.revertFolder",
@@ -203,8 +222,18 @@
         },
         {
           "command": "repoTree.revertFolder",
-          "when": "view == repoTree.repositories && viewItem == repoTree.scmChangeDir && config.git.enabled && !git.missing",
-          "group": "1_modification@1"
+          "when": "view == repoTree.repositories && viewItem == repoTree.scmChangeDir",
+          "group": "navigation@2"
+        },
+        {
+          "command": "repoTree.addToGitignore",
+          "when": "view == repoTree.repositories && viewItem == repoTree.scmFile",
+          "group": "navigation@3"
+        },
+        {
+          "command": "repoTree.addToGitignore",
+          "when": "view == repoTree.repositories && viewItem == repoTree.scmChangeDir",
+          "group": "navigation@1"
         }
       ]
     }
@@ -212,7 +241,7 @@
   "scripts": {
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "test": "npm run compile && node --test out/tree.test.js out/scmTree.test.js",
+    "test": "npm run compile && node --test out/tree.test.js out/scmTree.test.js out/gitignore.test.js",
     "vscode:prepublish": "npm run compile"
   },
   "devDependencies": {

@@ -4,6 +4,16 @@ All notable changes to **Repository Tree** are documented here.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.0] - 2026-09-30
+
+### Added
+
+- **Add to .gitignore** on a changed file or path folder. The repo `.gitignore` opens, the path is appended, and the file is saved so Git refreshes. Untracked paths leave the tree. A path already in the index stays listed until it is removed from the index.
+
+### Fixed
+
+- Right-click on a changed file or path folder opens a context menu (**Open Diff**, **Open File**, **Add to .gitignore**, **Revert**). Those rows previously had only hover icons, so the menu did not open.
+
 ## [0.1.0] - 2026-09-29
 
 First public release.

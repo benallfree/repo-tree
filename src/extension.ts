@@ -12,6 +12,7 @@ import {
   SCM_FILE_CONTEXT,
   type GitRepositoryRef,
 } from './gitRepo'
+import { appendGitignoreLine, toGitignorePattern } from './gitignore'
 import { nodeRootPath, stableNodeId, type RepoTreeNode } from './repoTreeNode'
 import { childrenOfChangeDir, mergeRepoChanges, nestChangePaths, type NestedChangeNode } from './scmTree'
 import {
@@ -396,6 +397,16 @@ function scmChangeDirFromItem(
   return undefined
 }
 
+function gitignoreTarget(item?: RepoTreeItem): { rootPath: string; entry: string } | undefined {
+  if (item?.node.kind === 'scmFile') {
+    return { rootPath: item.node.rootPath, entry: toGitignorePattern(item.node.relativePath, false) }
+  }
+  if (item?.node.kind === 'scmChangeDir' && item.node.relativeDir) {
+    return { rootPath: item.node.rootPath, entry: toGitignorePattern(item.node.relativeDir, true) }
+  }
+  return undefined
+}
+
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const stored = loadViewOptions(context.globalState.get<Partial<ViewOptions>>(STORAGE_KEY))
   await syncViewContext(stored)
@@ -407,6 +418,35 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     void syncViewContext(options)
   }
   provider.setViewOptions(stored)
+
+  const addPathToGitignore = async (item?: RepoTreeItem): Promise<void> => {
+    const target = gitignoreTarget(item)
+    if (!target) {
+      return
+    }
+    const uri = vscode.Uri.file(path.join(target.rootPath, '.gitignore'))
+    let doc: vscode.TextDocument
+    try {
+      doc = await vscode.workspace.openTextDocument(uri)
+    } catch {
+      await vscode.workspace.fs.writeFile(uri, new Uint8Array())
+      doc = await vscode.workspace.openTextDocument(uri)
+    }
+    const next = appendGitignoreLine(doc.getText(), target.entry)
+    if (next !== null) {
+      const edit = new vscode.WorkspaceEdit()
+      const end = doc.lineAt(Math.max(doc.lineCount - 1, 0)).range.end
+      const start = doc.positionAt(0)
+      edit.replace(doc.uri, new vscode.Range(start, end), next)
+      const applied = await vscode.workspace.applyEdit(edit)
+      if (!applied || !(await doc.save())) {
+        void vscode.window.showErrorMessage(`Could not update .gitignore in ${target.rootPath}`)
+        return
+      }
+    }
+    await vscode.window.showTextDocument(doc, { preview: true })
+    provider.refresh()
+  }
 
   const tree = vscode.window.createTreeView('repoTree.repositories', {
     treeDataProvider: provider,
@@ -543,6 +583,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return
       }
       void revertFolder(getGitApi, dir.rootPath, dir.relativeDir)
+    }),
+    vscode.commands.registerCommand('repoTree.addToGitignore', (item?: RepoTreeItem) => {
+      void addPathToGitignore(resolveTreeItem(tree, item))
     }),
     vscode.commands.registerCommand('repoTree.viewGitGraph', (item?: RepoTreeItem) => {
       void openRepoGraph('git-graph.view', item)
