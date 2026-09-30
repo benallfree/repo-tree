@@ -1,34 +1,19 @@
 import * as path from 'path'
 import * as vscode from 'vscode'
 import {
-  anyRepositoryHasStaged,
-  commitFromTitle,
-  commitRepoWithPrompt,
-  discardPaths,
   findGitRepository,
-  findScmResource,
+  findScmResourceForFile,
   openChangeDiff,
   openChangeFile,
+  revertFolder,
+  revertPaths,
   runGitRepoCommand,
-  scmFileContextValue,
-  stageAllWorking,
-  stagePaths,
+  SCM_CHANGE_DIR_CONTEXT,
+  SCM_FILE_CONTEXT,
   type GitRepositoryRef,
-  unstageAllIndex,
-  unstagePaths,
 } from './gitRepo'
-import {
-  nodeRootPath,
-  stableNodeId,
-  type RepoTreeNode,
-} from './repoTreeNode'
-import {
-  childrenOfChangeDir,
-  mergeRepoChanges,
-  nestChangePaths,
-  primaryScmSection,
-  type NestedChangeNode,
-} from './scmTree'
+import { nodeRootPath, stableNodeId, type RepoTreeNode } from './repoTreeNode'
+import { childrenOfChangeDir, mergeRepoChanges, nestChangePaths, type NestedChangeNode } from './scmTree'
 import {
   buildRepositoryTree,
   flattenRepositoryTree,
@@ -71,13 +56,13 @@ export class RepoTreeItem extends vscode.TreeItem {
     this.label = labelForNode(node)
 
     if (node.kind === 'scmChangeDir') {
-      this.contextValue = 'repoTree.scmChangeDir'
+      this.contextValue = SCM_CHANGE_DIR_CONTEXT
       this.tooltip = path.join(node.rootPath, node.relativeDir)
       this.iconPath = new vscode.ThemeIcon('symbol-folder')
       return
     }
     if (node.kind === 'scmFile') {
-      this.contextValue = scmFileContextValue(node.states)
+      this.contextValue = SCM_FILE_CONTEXT
       this.tooltip = path.join(node.rootPath, node.relativePath)
       this.iconPath = new vscode.ThemeIcon('file')
       this.command = {
@@ -111,13 +96,8 @@ class RepositoryTreeProvider implements vscode.TreeDataProvider<RepoTreeItem> {
   private git?: GitApi
   private viewOptions: ViewOptions = { ...defaultViewOptions }
   private readonly wipActivity = new Map<string, number>()
-  private onGitStateChange?: () => void
 
   constructor(private readonly getGit: () => GitApi | undefined) {}
-
-  setOnGitStateChange(handler: () => void): void {
-    this.onGitStateChange = handler
-  }
 
   setViewOptions(options: ViewOptions): void {
     this.viewOptions = options
@@ -130,7 +110,6 @@ class RepositoryTreeProvider implements vscode.TreeDataProvider<RepoTreeItem> {
 
   refresh(): void {
     this._onDidChangeTreeData.fire(undefined)
-    this.onGitStateChange?.()
   }
 
   bindGit(api: GitApi): void {
@@ -195,7 +174,7 @@ class RepositoryTreeProvider implements vscode.TreeDataProvider<RepoTreeItem> {
     const fileUri = vscode.Uri.file(path.join(node.rootPath, node.relativePath))
     item.resourceUri = fileUri
 
-    const resource = repo ? findScmResource(repo, node.relativePath, node.section) : undefined
+    const resource = repo ? findScmResourceForFile(repo, node.relativePath, node.states) : undefined
     if (!resource) {
       return
     }
@@ -276,12 +255,8 @@ class RepositoryTreeProvider implements vscode.TreeDataProvider<RepoTreeItem> {
   }
 
   private changeItemsForRepo(rootPath: string, git: GitApi, parentTreeId: string): RepoTreeItem[] {
-    return this.changeItemsAt(rootPath, git, '', parentTreeId)
-  }
-
-  private nestedChangesForRepo(rootPath: string, git: GitApi): NestedChangeNode[] {
-    const merged = this.mergedForRepo(rootPath, git)
-    return nestChangePaths(merged, this.viewOptions.layout === 'flat')
+    const nested = nestChangePaths(this.mergedForRepo(rootPath, git), this.viewOptions.layout === 'flat')
+    return nested.map((n) => this.nestedToItem(n, rootPath, parentTreeId))
   }
 
   private changeItemsAt(
@@ -290,27 +265,20 @@ class RepositoryTreeProvider implements vscode.TreeDataProvider<RepoTreeItem> {
     relativeDir: string,
     parentTreeId: string
   ): RepoTreeItem[] {
-    const nested = this.nestedChangesForRepo(rootPath, git)
+    const nested = nestChangePaths(this.mergedForRepo(rootPath, git), this.viewOptions.layout === 'flat')
     const level = childrenOfChangeDir(nested, relativeDir)
     return level.map((n) => this.nestedToItem(n, rootPath, parentTreeId))
   }
 
-  /** Used by repo expand to open the full change subtree. */
   getChildItems(element?: RepoTreeItem): RepoTreeItem[] {
     return this.getChildren(element)
   }
 
-  private nestedToItem(
-    node: NestedChangeNode,
-    rootPath: string,
-    parentTreeId: string
-  ): RepoTreeItem {
+  private nestedToItem(node: NestedChangeNode, rootPath: string, parentTreeId: string): RepoTreeItem {
     if (node.kind === 'file') {
-      const section = primaryScmSection(node.states)
       const treeNode: RepoTreeNode = {
         kind: 'scmFile',
         rootPath,
-        section,
         relativePath: node.relativePath,
         name: node.name,
         states: node.states,
@@ -396,29 +364,36 @@ async function syncViewContext(options: ViewOptions): Promise<void> {
   await vscode.commands.executeCommand('setContext', 'repoTree.hideUnchanged', options.hideUnchanged)
 }
 
-async function syncStagedContext(getGit: () => GitApi | undefined): Promise<void> {
-  await vscode.commands.executeCommand(
-    'setContext',
-    'repoTree.hasStaged',
-    anyRepositoryHasStaged(getGit())
-  )
+function resolveTreeItem(
+  tree: vscode.TreeView<RepoTreeItem>,
+  item?: RepoTreeItem
+): RepoTreeItem | undefined {
+  if (item?.node) {
+    return item
+  }
+  return tree.selection[0]
 }
 
 function scmFileFromItem(
+  tree: vscode.TreeView<RepoTreeItem>,
   item?: RepoTreeItem
 ): Extract<RepoTreeNode, { kind: 'scmFile' }> | undefined {
-  if (item?.node.kind === 'scmFile') {
-    return item.node
+  const resolved = resolveTreeItem(tree, item)
+  if (resolved?.node.kind === 'scmFile') {
+    return resolved.node
   }
   return undefined
 }
 
-function selectionRootPath(tree: vscode.TreeView<RepoTreeItem>): string | undefined {
-  const sel = tree.selection[0]
-  if (!sel) {
-    return undefined
+function scmChangeDirFromItem(
+  tree: vscode.TreeView<RepoTreeItem>,
+  item?: RepoTreeItem
+): Extract<RepoTreeNode, { kind: 'scmChangeDir' }> | undefined {
+  const resolved = resolveTreeItem(tree, item)
+  if (resolved?.node.kind === 'scmChangeDir') {
+    return resolved.node
   }
-  return nodeRootPath(sel.node)
+  return undefined
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
@@ -471,19 +446,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     })
   )
 
-  const refreshStagedContext = (): void => {
-    void syncStagedContext(getGitApi)
-  }
-  provider.setOnGitStateChange(refreshStagedContext)
-  context.subscriptions.push(tree.onDidChangeSelection(refreshStagedContext))
-  void syncStagedContext(getGitApi)
-
-  const updateOptions = (patch: Partial<ViewOptions>): void => {
-    const next = { ...provider.getViewOptions(), ...patch }
-    provider.setViewOptions(next)
-    persistOptions(next)
-  }
-
   const bindWhenReady = async (): Promise<void> => {
     const gitExt = vscode.extensions.getExtension('vscode.git')
     if (gitExt && !gitExt.isActive) {
@@ -492,10 +454,36 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const api = getGitApi()
     if (api) {
       provider.bindGit(api)
-      refreshStagedContext()
     }
   }
   void bindWhenReady()
+
+  const syncGraphContext = (): void => {
+    void vscode.commands.executeCommand(
+      'setContext',
+      'repoTree.gitGraph',
+      !!vscode.extensions.getExtension('mhutchie.git-graph')
+    )
+    void vscode.commands.executeCommand(
+      'setContext',
+      'repoTree.gitLens',
+      !!vscode.extensions.getExtension('eamodio.gitlens')
+    )
+  }
+  syncGraphContext()
+  context.subscriptions.push(vscode.extensions.onDidChange(syncGraphContext))
+
+  const openRepoGraph = async (command: string, item?: RepoTreeItem): Promise<void> => {
+    const rootPath = item
+      ? nodeRootPath(item.node)
+      : tree.selection[0]
+        ? nodeRootPath(tree.selection[0].node)
+        : undefined
+    if (!rootPath) {
+      return
+    }
+    await vscode.commands.executeCommand(command, { rootUri: vscode.Uri.file(rootPath) })
+  }
 
   context.subscriptions.push(
     vscode.commands.registerCommand('repoTree.refresh', () => provider.refresh()),
@@ -533,9 +521,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('repoTree.openFile', (item?: RepoTreeItem) =>
       openChangeFile(getGitApi, item)
     ),
-    vscode.commands.registerCommand('repoTree.commitFromTitle', () =>
-      commitFromTitle(getGitApi, selectionRootPath(tree))
-    ),
     vscode.commands.registerCommand('repoTree.gitSync', (item?: RepoTreeItem) =>
       runGitRepoCommand(getGitApi, 'git.sync', item)
     ),
@@ -545,43 +530,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('repoTree.gitPush', (item?: RepoTreeItem) =>
       runGitRepoCommand(getGitApi, 'git.push', item)
     ),
-    vscode.commands.registerCommand('repoTree.gitCommit', (item?: RepoTreeItem) =>
-      commitRepoWithPrompt(getGitApi, item)
-    ),
-    vscode.commands.registerCommand('repoTree.stageFile', (item?: RepoTreeItem) => {
-      const file = scmFileFromItem(item)
-      if (!file || (!file.states.includes('changes') && !file.states.includes('merge'))) {
-        return
-      }
-      void stagePaths(getGitApi, file.rootPath, [file.relativePath])
-    }),
-    vscode.commands.registerCommand('repoTree.unstageFile', (item?: RepoTreeItem) => {
-      const file = scmFileFromItem(item)
-      if (!file || !file.states.includes('staged')) {
-        return
-      }
-      void unstagePaths(getGitApi, file.rootPath, [file.relativePath])
-    }),
-    vscode.commands.registerCommand('repoTree.discardFile', (item?: RepoTreeItem) => {
-      const file = scmFileFromItem(item)
+    vscode.commands.registerCommand('repoTree.revertFile', (item?: RepoTreeItem) => {
+      const file = scmFileFromItem(tree, item)
       if (!file) {
         return
       }
-      void discardPaths(getGitApi, file.rootPath, [file.relativePath], file.section, file.states)
+      void revertPaths(getGitApi, file.rootPath, [file.relativePath])
     }),
-    vscode.commands.registerCommand('repoTree.stageAll', (item?: RepoTreeItem) => {
-      const rootPath = item ? nodeRootPath(item.node) : undefined
-      if (!rootPath) {
+    vscode.commands.registerCommand('repoTree.revertFolder', (item?: RepoTreeItem) => {
+      const dir = scmChangeDirFromItem(tree, item)
+      if (!dir) {
         return
       }
-      void stageAllWorking(getGitApi, rootPath)
+      void revertFolder(getGitApi, dir.rootPath, dir.relativeDir)
     }),
-    vscode.commands.registerCommand('repoTree.unstageAll', (item?: RepoTreeItem) => {
-      const rootPath = item ? nodeRootPath(item.node) : undefined
-      if (!rootPath) {
-        return
-      }
-      void unstageAllIndex(getGitApi, rootPath)
+    vscode.commands.registerCommand('repoTree.viewGitGraph', (item?: RepoTreeItem) => {
+      void openRepoGraph('git-graph.view', item)
+    }),
+    vscode.commands.registerCommand('repoTree.viewCommitGraph', (item?: RepoTreeItem) => {
+      void openRepoGraph('gitlens.showGraph', item)
     }),
     vscode.commands.registerCommand('repoTree.openInNewWindow', async (item?: RepoTreeItem) => {
       const rootPath = item ? nodeRootPath(item.node) : tree.selection[0] ? nodeRootPath(tree.selection[0].node) : undefined
@@ -593,6 +560,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       })
     })
   )
+
+  const updateOptions = (patch: Partial<ViewOptions>): void => {
+    const next = { ...provider.getViewOptions(), ...patch }
+    provider.setViewOptions(next)
+    persistOptions(next)
+  }
 }
 
 export function deactivate(): void {}

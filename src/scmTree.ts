@@ -1,5 +1,8 @@
 import * as path from 'path'
-import type { FileChangeState, ScmSection } from './repoTreeNode'
+
+export type FileChangeState = 'staged' | 'changes' | 'merge'
+
+export type ScmSection = 'staged' | 'changes' | 'merge'
 
 export interface GitChangeLike {
   uri: { fsPath: string }
@@ -52,6 +55,32 @@ export function repoSectionHasFiles(
 export const SCM_SECTION_ORDER: ScmSection[] = ['staged', 'changes', 'merge']
 
 /** Which SCM resource group to use for diff/decoration when a path has multiple states. */
+export function pathUnderRelativeDir(relativePath: string, relativeDir: string): boolean {
+  if (!relativeDir) {
+    return true
+  }
+  if (relativePath === relativeDir) {
+    return true
+  }
+  return relativePath.startsWith(`${relativeDir}/`)
+}
+
+export function pathsInSectionUnderDir(
+  merged: MergedChangeFile[],
+  section: ScmSection,
+  relativeDir: string
+): string[] {
+  return filesForSection(merged, section)
+    .filter((f) => pathUnderRelativeDir(f.relativePath, relativeDir))
+    .map((f) => f.relativePath)
+}
+
+export function pathsUnderDir(merged: MergedChangeFile[], relativeDir: string): string[] {
+  return merged
+    .filter((f) => pathUnderRelativeDir(f.relativePath, relativeDir))
+    .map((f) => f.relativePath)
+}
+
 export function primaryScmSection(states: FileChangeState[]): ScmSection {
   if (states.includes('merge')) {
     return 'merge'

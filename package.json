@@ -80,34 +80,14 @@
         "icon": "$(arrow-up)"
       },
       {
-        "command": "repoTree.gitCommit",
-        "title": "Commit",
-        "icon": "$(check)"
-      },
-      {
-        "command": "repoTree.stageFile",
-        "title": "Stage",
-        "icon": "$(add)"
-      },
-      {
-        "command": "repoTree.unstageFile",
-        "title": "Unstage",
-        "icon": "$(remove)"
-      },
-      {
-        "command": "repoTree.discardFile",
-        "title": "Discard Changes",
+        "command": "repoTree.revertFile",
+        "title": "Revert",
         "icon": "$(discard)"
       },
       {
-        "command": "repoTree.stageAll",
-        "title": "Stage All Changes",
-        "icon": "$(add)"
-      },
-      {
-        "command": "repoTree.unstageAll",
-        "title": "Unstage All",
-        "icon": "$(remove)"
+        "command": "repoTree.revertFolder",
+        "title": "Revert",
+        "icon": "$(discard)"
       },
       {
         "command": "repoTree.openDiff",
@@ -119,9 +99,14 @@
         "icon": "$(go-to-file)"
       },
       {
-        "command": "repoTree.commitFromTitle",
-        "title": "Commit Staged",
-        "icon": "$(check)"
+        "command": "repoTree.viewGitGraph",
+        "title": "View Git Graph",
+        "icon": "$(git-commit)"
+      },
+      {
+        "command": "repoTree.viewCommitGraph",
+        "title": "Show Commit Graph",
+        "icon": "$(gitlens-graph)"
       }
     ],
     "menus": {
@@ -155,14 +140,19 @@
           "command": "repoTree.refresh",
           "when": "view == repoTree.repositories",
           "group": "navigation@4"
-        },
-        {
-          "command": "repoTree.commitFromTitle",
-          "when": "view == repoTree.repositories && repoTree.hasStaged && config.git.enabled && !git.missing",
-          "group": "navigation@5"
         }
       ],
       "view/item/context": [
+        {
+          "command": "repoTree.viewGitGraph",
+          "when": "view == repoTree.repositories && viewItem == repoTree.repo && repoTree.gitGraph",
+          "group": "inline@0"
+        },
+        {
+          "command": "repoTree.viewCommitGraph",
+          "when": "view == repoTree.repositories && viewItem == repoTree.repo && repoTree.gitLens",
+          "group": "inline@0"
+        },
         {
           "command": "repoTree.gitSync",
           "when": "view == repoTree.repositories && viewItem == repoTree.repo && config.git.enabled && !git.missing",
@@ -179,11 +169,6 @@
           "group": "inline@3"
         },
         {
-          "command": "repoTree.gitCommit",
-          "when": "view == repoTree.repositories && viewItem == repoTree.repo && config.git.enabled && !git.missing",
-          "group": "inline@4"
-        },
-        {
           "command": "repoTree.revealInExplorer",
           "when": "view == repoTree.repositories && viewItem == repoTree.repo",
           "group": "navigation@1"
@@ -194,34 +179,24 @@
           "group": "navigation@2"
         },
         {
-          "command": "repoTree.stageAll",
-          "when": "view == repoTree.repositories && viewItem == repoTree.repo && config.git.enabled && !git.missing",
-          "group": "inline@5"
-        },
-        {
-          "command": "repoTree.unstageAll",
-          "when": "view == repoTree.repositories && viewItem == repoTree.repo && config.git.enabled && !git.missing",
-          "group": "inline@6"
-        },
-        {
           "command": "repoTree.openFile",
-          "when": "view == repoTree.repositories && viewItem =~ /^repoTree.scmFile\\./ && config.git.enabled && !git.missing",
+          "when": "view == repoTree.repositories && viewItem == repoTree.scmFile && config.git.enabled && !git.missing",
           "group": "inline@1"
         },
         {
-          "command": "repoTree.stageFile",
-          "when": "view == repoTree.repositories && viewItem =~ /repoTree\\.scmFile\\..*\\.changes/ && config.git.enabled && !git.missing",
+          "command": "repoTree.revertFile",
+          "when": "view == repoTree.repositories && viewItem == repoTree.scmFile && config.git.enabled && !git.missing",
           "group": "inline@2"
         },
         {
-          "command": "repoTree.unstageFile",
-          "when": "view == repoTree.repositories && viewItem =~ /repoTree\\.scmFile\\..*\\.staged/ && config.git.enabled && !git.missing",
-          "group": "inline@3"
+          "command": "repoTree.revertFolder",
+          "when": "view == repoTree.repositories && viewItem == repoTree.scmChangeDir && config.git.enabled && !git.missing",
+          "group": "inline@1"
         },
         {
-          "command": "repoTree.discardFile",
-          "when": "view == repoTree.repositories && viewItem =~ /^repoTree.scmFile\\./ && config.git.enabled && !git.missing",
-          "group": "inline@4"
+          "command": "repoTree.revertFolder",
+          "when": "view == repoTree.repositories && viewItem == repoTree.scmChangeDir && config.git.enabled && !git.missing",
+          "group": "1_modification@1"
         }
       ]
     }

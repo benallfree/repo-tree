@@ -3,8 +3,10 @@ import { describe, it } from 'node:test'
 import {
   filesForSection,
   mergeRepoChanges,
-  primaryScmSection,
   nestChangePaths,
+  pathsInSectionUnderDir,
+  pathsUnderDir,
+  primaryScmSection,
   relativeRepoPath,
   repoSectionHasFiles,
 } from './scmTree'
@@ -55,6 +57,45 @@ describe('primaryScmSection', () => {
     assert.equal(primaryScmSection(['staged', 'changes']), 'changes')
     assert.equal(primaryScmSection(['staged', 'merge']), 'merge')
     assert.equal(primaryScmSection(['staged']), 'staged')
+  })
+})
+
+describe('pathsInSectionUnderDir', () => {
+  const merged = mergeRepoChanges(
+    '/repo',
+    [{ uri: { fsPath: '/repo/samples/a.txt' } }],
+    [
+      { uri: { fsPath: '/repo/samples/b.txt' } },
+      { uri: { fsPath: '/repo/other/c.txt' } },
+    ],
+    []
+  )
+
+  it('returns all paths in section at section root', () => {
+    const staged = pathsInSectionUnderDir(merged, 'staged', '')
+    assert.deepEqual(staged.sort(), ['samples/a.txt'])
+    const changes = pathsInSectionUnderDir(merged, 'changes', '')
+    assert.deepEqual(changes.sort(), ['other/c.txt', 'samples/b.txt'])
+  })
+
+  it('filters by directory prefix within section only', () => {
+    assert.deepEqual(pathsInSectionUnderDir(merged, 'changes', 'samples'), ['samples/b.txt'])
+    assert.deepEqual(pathsInSectionUnderDir(merged, 'staged', 'samples'), ['samples/a.txt'])
+    assert.deepEqual(pathsInSectionUnderDir(merged, 'staged', 'other'), [])
+  })
+})
+
+describe('pathsUnderDir', () => {
+  const merged = mergeRepoChanges(
+    '/repo',
+    [{ uri: { fsPath: '/repo/samples/a.txt' } }],
+    [{ uri: { fsPath: '/repo/samples/b.txt' } }],
+    [{ uri: { fsPath: '/repo/other/m.txt' } }]
+  )
+
+  it('returns all merged paths under a directory prefix', () => {
+    assert.deepEqual(pathsUnderDir(merged, 'samples').sort(), ['samples/a.txt', 'samples/b.txt'])
+    assert.deepEqual(pathsUnderDir(merged, '').sort(), ['other/m.txt', 'samples/a.txt', 'samples/b.txt'])
   })
 })
 

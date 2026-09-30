@@ -29,10 +29,11 @@ Hide the built-in **Repositories** section from Source Control → `...` → Vie
 | Tree / flat | Toggle nested folders vs a single sorted list |
 | Sort | Name, or recent WIP (last dirty activity in this window) |
 | Filter | Hide clean repos; tree mode keeps parent folders |
-| Commit (check) | Shown when any repo has staged changes; commits using SCM input message or a prompt |
 
-For file rows to show inline stage/unstage icons like built-in **Changes**, set `"scm.alwaysShowActions": true` in settings.
+For inline **Revert** on changed file and path-folder rows, set `"scm.alwaysShowActions": true` in settings.
 
 ### Dirty repos
 
-Expand a dirty repo to see changed files nested by path directly under that repo (no **Changes** group row). Expanding a repo opens the full change subtree. Click a file to open the same diff as **Changes** (`git.openChange`). Use the go-to-file icon for the working copy. Stage (+), unstage (−), and discard on file rows. **Stage All** / **Unstage All** are on the repo row. Repo rows keep sync, pull, push, and commit.
+Expand a dirty repo to see changed files nested by path (no Staged/Changes section headers). Expanding a repo opens the full change subtree. Click a file to open the same diff as **Changes** (`git.openChange`). **Revert** on a file or folder unstages and discards back to HEAD (including untracked under that path). Repo rows keep sync, pull, and push.
+
+If [Git Graph](https://marketplace.visualstudio.com/items?itemName=mhutchie.git-graph) or GitLens is installed, the same hover graph action that **Changes** shows on each repository appears on the repo row (**View Git Graph** / **Show Commit Graph**).

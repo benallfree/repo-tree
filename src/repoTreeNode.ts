@@ -1,9 +1,8 @@
 import type { TreeNode } from './tree'
 import { repoRootPath } from './tree'
+import type { FileChangeState } from './scmTree'
 
-export type FileChangeState = 'staged' | 'changes' | 'merge'
-
-export type ScmSection = 'staged' | 'changes' | 'merge'
+export type { FileChangeState }
 
 export type RepoTreeNode =
   | TreeNode
@@ -11,7 +10,6 @@ export type RepoTreeNode =
   | {
       kind: 'scmFile'
       rootPath: string
-      section: ScmSection
       relativePath: string
       name: string
       states: FileChangeState[]
