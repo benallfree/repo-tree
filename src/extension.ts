@@ -516,10 +516,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       await vscode.commands.executeCommand('revealInExplorer', vscode.Uri.file(target))
     }),
     vscode.commands.registerCommand('repoTree.openDiff', (item?: RepoTreeItem) =>
-      openChangeDiff(getGitApi, item)
+      openChangeDiff(getGitApi, resolveTreeItem(tree, item))
     ),
     vscode.commands.registerCommand('repoTree.openFile', (item?: RepoTreeItem) =>
-      openChangeFile(getGitApi, item)
+      openChangeFile(getGitApi, resolveTreeItem(tree, item))
     ),
     vscode.commands.registerCommand('repoTree.gitSync', (item?: RepoTreeItem) =>
       runGitRepoCommand(getGitApi, 'git.sync', item)

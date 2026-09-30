@@ -34,6 +34,6 @@ For inline **Revert** on changed file and path-folder rows, set `"scm.alwaysShow
 
 ### Dirty repos
 
-Expand a dirty repo to see changed files nested by path (no Staged/Changes section headers). Expanding a repo opens the full change subtree. Click a file to open the same diff as **Changes** (`git.openChange`). **Revert** on a file or folder unstages and discards back to HEAD (including untracked under that path). Repo rows keep sync, pull, and push.
+Expand a dirty repo to see changed files nested by path (no Staged/Changes section headers). Expanding a repo opens the full change subtree. Click a changed file row to open the diff (`git.openChange`). The go-to-file icon opens the working copy in the editor. **Revert** on a file or folder unstages and discards back to HEAD (including untracked under that path). Repo rows keep sync, pull, and push.
 
 If [Git Graph](https://marketplace.visualstudio.com/items?itemName=mhutchie.git-graph) or GitLens is installed, the same hover graph action that **Changes** shows on each repository appears on the repo row (**View Git Graph** / **Show Commit Graph**).

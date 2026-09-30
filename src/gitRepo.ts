@@ -249,26 +249,20 @@ export async function openChangeDiff(
 }
 
 export async function openChangeFile(
-  getGit: () => GitApiLite | undefined,
+  _getGit: () => GitApiLite | undefined,
   item?: RepoTreeItemLike
 ): Promise<void> {
   if (item?.node.kind !== 'scmFile') {
     return
   }
-  const { rootPath, relativePath, states } = item.node
-  const repo = findGitRepository(getGit(), rootPath)
-  if (!repo) {
-    return
-  }
-
-  const resource = findScmResourceForFile(repo, relativePath, states)
-  if (resource) {
-    await resource.openFile()
-    return
-  }
-
+  const { rootPath, relativePath } = item.node
   const uri = vscode.Uri.file(absPathForRelative(rootPath, relativePath))
-  await vscode.commands.executeCommand('git.openFile', uri)
+  try {
+    const doc = await vscode.workspace.openTextDocument(uri)
+    await vscode.window.showTextDocument(doc, { preview: false })
+  } catch {
+    void vscode.window.showErrorMessage(`Could not open ${relativePath}`)
+  }
 }
 
 export const SCM_FILE_CONTEXT = 'repoTree.scmFile'
