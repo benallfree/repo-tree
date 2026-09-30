@@ -4,6 +4,14 @@
   "description": "Nested tree of git repositories in the Source Control sidebar",
   "version": "0.1.0",
   "publisher": "benallfree",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/benallfree/repo-tree"
+  },
+  "bugs": {
+    "url": "https://github.com/benallfree/repo-tree/issues"
+  },
+  "homepage": "https://github.com/benallfree/repo-tree#readme",
   "engines": {
     "vscode": "^1.85.0"
   },
