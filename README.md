@@ -6,6 +6,10 @@ I keep a single monolithic workspace of all my projects and priorities in one ID
 
 This extension improves on that default by presenting a **tree** you can navigate for change review and change management: folder-grouped repos, path-nested dirty files under each repo, and the same diff, revert, and git actions without hopping between flat lists.
 
+[Video walkthrough](https://youtu.be/XgD1qGyHyfU)
+
+![Repository Tree in the Source Control sidebar](images/repository-tree.png)
+
 ## Install locally
 
 ```bash
