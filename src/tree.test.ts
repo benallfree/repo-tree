@@ -159,6 +159,19 @@ describe('flattenRepositoryTree', () => {
 })
 
 describe('sortTreeNodes', () => {
+  it('sorts siblings by human case-insensitive name', () => {
+    const tree: import('./tree').TreeNode[] = [
+      { kind: 'repo', name: 'zebra', rootPath: '/z' },
+      { kind: 'folder', name: 'Alpha', children: [] },
+      { kind: 'repo', name: 'beta', rootPath: '/b' },
+    ]
+    sortTreeNodes(tree, 'name', () => 0)
+    assert.deepEqual(
+      tree.map((n) => n.name),
+      ['Alpha', 'beta', 'zebra']
+    )
+  })
+
   it('sorts repos by recent wip rank at each level', () => {
     const tree = buildRepositoryTree([
       { rootPath: `${reposRoot}/meshenvy/lobbs` },

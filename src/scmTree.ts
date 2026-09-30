@@ -1,4 +1,5 @@
 import * as path from 'path'
+import { compareHumanNames } from './tree'
 
 export type FileChangeState = 'staged' | 'changes' | 'merge'
 
@@ -152,9 +153,7 @@ function sortNested(nodes: NestedChangeNode[]): void {
     if (a.kind !== b.kind) {
       return a.kind === 'dir' ? -1 : 1
     }
-    const keyA = a.kind === 'dir' ? a.relativeDir : a.relativePath
-    const keyB = b.kind === 'dir' ? b.relativeDir : b.relativePath
-    return keyA.localeCompare(keyB)
+    return compareHumanNames(a.name, b.name)
   })
   for (const node of nodes) {
     if (node.kind === 'dir') {
@@ -168,12 +167,14 @@ export function nestChangePaths(files: MergedChangeFile[], flat: boolean): Neste
     return []
   }
   if (flat) {
-    return files.map((f) => ({
-      kind: 'file' as const,
-      relativePath: f.relativePath,
-      name: f.name,
-      states: f.states,
-    }))
+    return files
+      .map((f) => ({
+        kind: 'file' as const,
+        relativePath: f.relativePath,
+        name: f.name,
+        states: f.states,
+      }))
+      .sort((a, b) => compareHumanNames(a.name, b.name))
   }
   const root: NestedChangeNode[] = []
   for (const file of files) {

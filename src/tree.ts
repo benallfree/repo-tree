@@ -124,8 +124,9 @@ export function treeHasDirtyRepo(
   return false
 }
 
-function nodeSortKey(node: TreeNode): string {
-  return node.name
+/** Case-insensitive, numeric-aware sibling sort (e.g. item2 before item10). */
+export function compareHumanNames(a: string, b: string): number {
+  return a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true })
 }
 
 function compareNodes(
@@ -134,22 +135,24 @@ function compareNodes(
   sortMode: SortMode,
   wipRank: (rootPath: string) => number
 ): number {
+  if (sortMode === 'name') {
+    return compareHumanNames(a.name, b.name)
+  }
+
   const aFolder = a.kind === 'folder'
   const bFolder = b.kind === 'folder'
   if (aFolder !== bFolder) {
     return aFolder ? -1 : 1
   }
-  if (sortMode === 'wip') {
-    const aPath = repoRootPath(a)
-    const bPath = repoRootPath(b)
-    if (aPath && bPath) {
-      const byWip = wipRank(bPath) - wipRank(aPath)
-      if (byWip !== 0) {
-        return byWip
-      }
+  const aPath = repoRootPath(a)
+  const bPath = repoRootPath(b)
+  if (aPath && bPath) {
+    const byWip = wipRank(bPath) - wipRank(aPath)
+    if (byWip !== 0) {
+      return byWip
     }
   }
-  return nodeSortKey(a).localeCompare(nodeSortKey(b))
+  return compareHumanNames(a.name, b.name)
 }
 
 export function sortTreeNodes(
