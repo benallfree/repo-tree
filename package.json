@@ -12,6 +12,7 @@
     "url": "https://github.com/benallfree/repo-tree/issues"
   },
   "homepage": "https://github.com/benallfree/repo-tree#readme",
+  "icon": "images/icon.png",
   "engines": {
     "vscode": "^1.85.0"
   },
