@@ -4,9 +4,9 @@ All notable changes to **Repository Tree** are documented here.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.2.0] - 2026-09-29
+## [0.1.0] - 2026-09-29
 
-First release-ready build for multi-repo workspaces.
+First public release.
 
 ### Added
 
