@@ -4,6 +4,16 @@ export interface RepoInput {
   rootPath: string
 }
 
+export interface WorkspaceAnchorInput {
+  fsPath: string
+  name: string
+  order: number
+}
+
+export interface BuildRepositoryTreeOptions {
+  workspaceFolders?: WorkspaceAnchorInput[]
+}
+
 export interface RepoStatusInput {
   headName?: string
   headCommit?: string
@@ -207,26 +217,117 @@ export function pruneUnchangedTree(
   return out
 }
 
-export function buildRepositoryTree(repos: RepoInput[]): TreeNode[] {
-  if (repos.length === 0) return []
-  const normalized = repos.map((r) => normalizeRoot(r.rootPath))
-  const prefix = commonPathPrefix(normalized)
-  const root: TreeNode[] = []
-  if (!prefix) {
-    for (const rootPath of normalized) {
-      root.push({ kind: 'repo', name: path.basename(rootPath), rootPath })
+export function findAnchor(
+  repoPath: string,
+  folders: WorkspaceAnchorInput[]
+): WorkspaceAnchorInput | undefined {
+  const normalized = normalizeRoot(repoPath)
+  let best: WorkspaceAnchorInput | undefined
+  let bestLen = -1
+  for (const folder of folders) {
+    const anchorPath = normalizeRoot(folder.fsPath)
+    if (normalized === anchorPath || normalized.startsWith(anchorPath + path.sep)) {
+      if (anchorPath.length > bestLen) {
+        bestLen = anchorPath.length
+        best = folder
+      }
     }
-    return root
   }
-  const prefixSegs = splitSegments(prefix)
-  for (const rootPath of normalized) {
-    const segs = splitSegments(rootPath)
-    const relative = segs.slice(prefixSegs.length)
-    if (relative.length === 0) {
-      root.push({ kind: 'repo', name: path.basename(rootPath), rootPath })
-    } else {
-      insertRepo(root, relative, rootPath)
+  return best
+}
+
+function relativeSegmentsFromAnchor(anchorPath: string, repoPath: string): string[] {
+  const rel = path.relative(normalizeRoot(anchorPath), normalizeRoot(repoPath))
+  if (!rel || rel === '.') {
+    return []
+  }
+  return rel.split(path.sep).filter(Boolean)
+}
+
+function buildBucketNode(displayName: string, anchorPath: string, repoPaths: string[]): TreeNode {
+  const anchor = normalizeRoot(anchorPath)
+  const paths = repoPaths.map(normalizeRoot)
+
+  if (paths.length === 1 && paths[0] === anchor) {
+    return { kind: 'repo', name: displayName, rootPath: anchor }
+  }
+
+  const nested = paths.filter((p) => p !== anchor)
+  const children: TreeNode[] = []
+  for (const p of nested) {
+    insertRepo(children, relativeSegmentsFromAnchor(anchor, p), p)
+  }
+
+  if (paths.some((p) => p === anchor)) {
+    return { kind: 'folder', name: displayName, rootPath: anchor, children }
+  }
+
+  return { kind: 'folder', name: displayName, children }
+}
+
+function reposUnderWorkspace(
+  repoPaths: string[],
+  folders: WorkspaceAnchorInput[]
+): string[] {
+  const out: string[] = []
+  for (const p of repoPaths) {
+    if (findAnchor(p, folders)) {
+      out.push(p)
     }
+  }
+  return out
+}
+
+export function buildRepositoryTree(
+  repos: RepoInput[],
+  options?: BuildRepositoryTreeOptions
+): TreeNode[] {
+  if (repos.length === 0) {
+    return []
+  }
+
+  const normalized = repos.map((r) => normalizeRoot(r.rootPath))
+  const folders = options?.workspaceFolders ?? []
+
+  if (folders.length === 0) {
+    return normalized.map((rootPath) => ({
+      kind: 'repo' as const,
+      name: path.basename(rootPath),
+      rootPath,
+    }))
+  }
+
+  if (folders.length === 1) {
+    const anchor = folders[0]
+    const under = reposUnderWorkspace(normalized, folders)
+    const node = buildBucketNode(anchor.name, anchor.fsPath, under)
+    return under.length > 0 ? [node] : []
+  }
+
+  const buckets = new Map<string, { anchor: WorkspaceAnchorInput; paths: string[] }>()
+  for (const rootPath of normalized) {
+    const match = findAnchor(rootPath, folders)
+    if (!match) {
+      continue
+    }
+    const key = normalizeRoot(match.fsPath)
+    let bucket = buckets.get(key)
+    if (!bucket) {
+      bucket = { anchor: match, paths: [] }
+      buckets.set(key, bucket)
+    }
+    bucket.paths.push(rootPath)
+  }
+
+  const root: TreeNode[] = []
+  const sortedAnchors = [...folders].sort((a, b) => a.order - b.order)
+  for (const folder of sortedAnchors) {
+    const key = normalizeRoot(folder.fsPath)
+    const bucket = buckets.get(key)
+    if (!bucket || bucket.paths.length === 0) {
+      continue
+    }
+    root.push(buildBucketNode(folder.name, folder.fsPath, bucket.paths))
   }
   return root
 }

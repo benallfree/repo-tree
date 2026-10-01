@@ -4,7 +4,7 @@
 
 I keep a single monolithic workspace of all my projects and priorities in one IDE instance. In practice, agents are far better at making modifications when cross-project context is available in that window. Cursor’s default **Repositories** list and per-repo **Changes** views do not scale when you have a large portfolio of roots and nested checkouts.
 
-This extension improves on that default by presenting a **tree** you can navigate for change review and change management: folder-grouped repos, path-nested dirty files under each repo, and the same diff, revert, and git actions without hopping between flat lists.
+This extension improves on that default by presenting a **tree** you can navigate for change review and change management. **Top-level rows follow your workspace folders** (multi-root `.code-workspace` entries), not shared filesystem paths like `meshenvy/` or `pocketbase/`. Nested git checkouts still appear under the workspace folder that contains them. Each repo expands to path-nested **Staged Changes**, **Changes**, and **Merge Changes**, with the same diff, stage, discard, and commit actions without hopping between flat lists.
 
 [Video walkthrough](https://youtu.be/XgD1qGyHyfU)
 

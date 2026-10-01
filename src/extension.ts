@@ -327,7 +327,17 @@ class RepositoryTreeProvider implements vscode.TreeDataProvider<RepoTreeItem> {
       return items
     }
 
-    let roots = buildRepositoryTree(git.repositories.map((r) => ({ rootPath: r.rootUri.fsPath })))
+    const workspaceFolders =
+      vscode.workspace.workspaceFolders?.map((f, order) => ({
+        fsPath: f.uri.fsPath,
+        name: f.name,
+        order,
+      })) ?? []
+
+    let roots = buildRepositoryTree(
+      git.repositories.map((r) => ({ rootPath: r.rootUri.fsPath })),
+      { workspaceFolders }
+    )
 
     if (this.viewOptions.hideUnchanged) {
       roots = pruneUnchangedTree(roots, isDirty)
@@ -792,6 +802,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
   }
   void bindWhenReady()
+
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeWorkspaceFolders(() => {
+      provider.refresh()
+    })
+  )
 
   const syncGraphContext = (): void => {
     void vscode.commands.executeCommand(
