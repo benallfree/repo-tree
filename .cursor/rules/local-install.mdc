@@ -1,0 +1,33 @@
+---
+description: Run install after every extension change (symlink + build bump)
+alwaysApply: true
+---
+
+# Local install after changes
+
+Repository Tree is loaded from `~/.cursor/extensions/benallfree.repo-tree-<version>` via `./scripts/install.sh`, not from this repo path directly.
+
+## Required before you finish
+
+After **any** change that affects the running extension:
+
+- `src/**`
+- `package.json` (commands, menus, views, version metadata)
+- `scripts/install.sh`, `scripts/bump-build-version.mjs`
+
+Run:
+
+```bash
+./scripts/install.sh
+```
+
+That compiles, bumps the local `-bN` suffix in `package.json`, and refreshes the Cursor extensions symlink.
+
+## Verify
+
+- Prefer `npm test` in the same session when you touched logic.
+- Tell the operator to **reload the window** if they will smoke-test in Cursor (install alone does not hot-reload the host).
+
+## Do not skip
+
+Do not end a coding task with only `npm run compile`. Compile without `install.sh` leaves the loaded extension stale.
