@@ -5,9 +5,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 npm install
+VERSION="$(node scripts/bump-build-version.mjs)"
 npm run compile
-
-VERSION="$(node -p "require('./package.json').version")"
 EXT_DIR="${HOME}/.cursor/extensions"
 TARGET="${EXT_DIR}/benallfree.repo-tree-${VERSION}"
 
