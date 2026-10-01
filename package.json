@@ -16,8 +16,12 @@
   "engines": {
     "vscode": "^1.85.0"
   },
-  "categories": ["Other"],
-  "activationEvents": ["onView:repoTree.repositories"],
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onView:repoTree.repositories"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "views": {
@@ -79,6 +83,11 @@
         "icon": "$(sync)"
       },
       {
+        "command": "repoTree.gitSyncBusy",
+        "title": "Syncing",
+        "icon": "$(sync~spin)"
+      },
+      {
         "command": "repoTree.gitPull",
         "title": "Pull",
         "icon": "$(arrow-down)"
@@ -89,13 +98,38 @@
         "icon": "$(arrow-up)"
       },
       {
-        "command": "repoTree.revertFile",
-        "title": "Revert",
+        "command": "repoTree.commit",
+        "title": "Commit",
+        "icon": "$(check)"
+      },
+      {
+        "command": "repoTree.stageFile",
+        "title": "Stage",
+        "icon": "$(add)"
+      },
+      {
+        "command": "repoTree.unstageFile",
+        "title": "Unstage",
+        "icon": "$(remove)"
+      },
+      {
+        "command": "repoTree.discardFile",
+        "title": "Discard",
         "icon": "$(discard)"
       },
       {
-        "command": "repoTree.revertFolder",
-        "title": "Revert",
+        "command": "repoTree.stageAllInScope",
+        "title": "Stage All",
+        "icon": "$(add)"
+      },
+      {
+        "command": "repoTree.unstageAllInScope",
+        "title": "Unstage All",
+        "icon": "$(remove)"
+      },
+      {
+        "command": "repoTree.discardAllInScope",
+        "title": "Discard All",
         "icon": "$(discard)"
       },
       {
@@ -153,6 +187,61 @@
           "command": "repoTree.refresh",
           "when": "view == repoTree.repositories",
           "group": "navigation@4"
+        },
+        {
+          "command": "repoTree.commit",
+          "when": "view == repoTree.repositories && repoTree.selectionKind == repo && config.git.enabled && !git.missing",
+          "group": "navigation@5"
+        },
+        {
+          "command": "repoTree.stageFile",
+          "when": "view == repoTree.repositories && repoTree.selectionKind == file.changes && config.git.enabled && !git.missing",
+          "group": "navigation@6"
+        },
+        {
+          "command": "repoTree.discardFile",
+          "when": "view == repoTree.repositories && repoTree.selectionKind == file.changes && config.git.enabled && !git.missing",
+          "group": "navigation@7"
+        },
+        {
+          "command": "repoTree.stageFile",
+          "when": "view == repoTree.repositories && repoTree.selectionKind == file.merge && config.git.enabled && !git.missing",
+          "group": "navigation@6"
+        },
+        {
+          "command": "repoTree.unstageFile",
+          "when": "view == repoTree.repositories && repoTree.selectionKind == file.staged && config.git.enabled && !git.missing",
+          "group": "navigation@6"
+        },
+        {
+          "command": "repoTree.stageAllInScope",
+          "when": "view == repoTree.repositories && (repoTree.selectionKind == section.changes || repoTree.selectionKind == dir.changes) && config.git.enabled && !git.missing",
+          "group": "navigation@6"
+        },
+        {
+          "command": "repoTree.discardAllInScope",
+          "when": "view == repoTree.repositories && (repoTree.selectionKind == section.changes || repoTree.selectionKind == dir.changes) && config.git.enabled && !git.missing",
+          "group": "navigation@7"
+        },
+        {
+          "command": "repoTree.stageAllInScope",
+          "when": "view == repoTree.repositories && (repoTree.selectionKind == section.merge || repoTree.selectionKind == dir.merge) && config.git.enabled && !git.missing",
+          "group": "navigation@6"
+        },
+        {
+          "command": "repoTree.unstageAllInScope",
+          "when": "view == repoTree.repositories && (repoTree.selectionKind == section.staged || repoTree.selectionKind == dir.staged) && config.git.enabled && !git.missing",
+          "group": "navigation@6"
+        },
+        {
+          "command": "repoTree.openDiff",
+          "when": "view == repoTree.repositories && repoTree.selectionKind =~ /^file\\./",
+          "group": "navigation@8"
+        },
+        {
+          "command": "repoTree.openFile",
+          "when": "view == repoTree.repositories && repoTree.selectionKind =~ /^file\\./ && config.git.enabled && !git.missing",
+          "group": "navigation@9"
         }
       ],
       "view/item/context": [
@@ -167,19 +256,29 @@
           "group": "inline@0"
         },
         {
-          "command": "repoTree.gitSync",
+          "command": "repoTree.commit",
           "when": "view == repoTree.repositories && viewItem == repoTree.repo && config.git.enabled && !git.missing",
           "group": "inline@1"
         },
         {
-          "command": "repoTree.gitPull",
+          "command": "repoTree.gitSync",
           "when": "view == repoTree.repositories && viewItem == repoTree.repo && config.git.enabled && !git.missing",
           "group": "inline@2"
         },
         {
-          "command": "repoTree.gitPush",
+          "command": "repoTree.gitSyncBusy",
+          "when": "view == repoTree.repositories && viewItem == repoTree.repo.syncing && config.git.enabled && !git.missing",
+          "group": "inline@2"
+        },
+        {
+          "command": "repoTree.gitPull",
           "when": "view == repoTree.repositories && viewItem == repoTree.repo && config.git.enabled && !git.missing",
           "group": "inline@3"
+        },
+        {
+          "command": "repoTree.gitPush",
+          "when": "view == repoTree.repositories && viewItem == repoTree.repo && config.git.enabled && !git.missing",
+          "group": "inline@4"
         },
         {
           "command": "repoTree.revealInExplorer",
@@ -192,49 +291,149 @@
           "group": "navigation@2"
         },
         {
-          "command": "repoTree.openFile",
-          "when": "view == repoTree.repositories && viewItem == repoTree.scmFile && config.git.enabled && !git.missing",
+          "command": "repoTree.unstageAllInScope",
+          "when": "view == repoTree.repositories && viewItem == repoTree.section.staged && config.git.enabled && !git.missing",
           "group": "inline@1"
         },
         {
-          "command": "repoTree.openFile",
-          "when": "view == repoTree.repositories && viewItem == repoTree.scmFile",
-          "group": "navigation@2"
-        },
-        {
-          "command": "repoTree.openDiff",
-          "when": "view == repoTree.repositories && viewItem == repoTree.scmFile",
+          "command": "repoTree.unstageAllInScope",
+          "when": "view == repoTree.repositories && viewItem == repoTree.section.staged",
           "group": "navigation@1"
         },
         {
-          "command": "repoTree.revertFile",
-          "when": "view == repoTree.repositories && viewItem == repoTree.scmFile && config.git.enabled && !git.missing",
-          "group": "inline@2"
-        },
-        {
-          "command": "repoTree.revertFile",
-          "when": "view == repoTree.repositories && viewItem == repoTree.scmFile",
-          "group": "navigation@4"
-        },
-        {
-          "command": "repoTree.revertFolder",
-          "when": "view == repoTree.repositories && viewItem == repoTree.scmChangeDir && config.git.enabled && !git.missing",
+          "command": "repoTree.unstageAllInScope",
+          "when": "view == repoTree.repositories && viewItem == repoTree.scmChangeDir.staged && config.git.enabled && !git.missing",
           "group": "inline@1"
         },
         {
-          "command": "repoTree.revertFolder",
-          "when": "view == repoTree.repositories && viewItem == repoTree.scmChangeDir",
+          "command": "repoTree.unstageAllInScope",
+          "when": "view == repoTree.repositories && viewItem == repoTree.scmChangeDir.staged",
+          "group": "navigation@1"
+        },
+        {
+          "command": "repoTree.stageAllInScope",
+          "when": "view == repoTree.repositories && viewItem == repoTree.section.changes && config.git.enabled && !git.missing",
+          "group": "inline@1"
+        },
+        {
+          "command": "repoTree.discardAllInScope",
+          "when": "view == repoTree.repositories && viewItem == repoTree.section.changes && config.git.enabled && !git.missing",
+          "group": "inline@2"
+        },
+        {
+          "command": "repoTree.stageAllInScope",
+          "when": "view == repoTree.repositories && viewItem == repoTree.section.changes",
+          "group": "navigation@1"
+        },
+        {
+          "command": "repoTree.discardAllInScope",
+          "when": "view == repoTree.repositories && viewItem == repoTree.section.changes",
           "group": "navigation@2"
         },
         {
-          "command": "repoTree.addToGitignore",
-          "when": "view == repoTree.repositories && viewItem == repoTree.scmFile",
+          "command": "repoTree.stageAllInScope",
+          "when": "view == repoTree.repositories && viewItem == repoTree.scmChangeDir.changes && config.git.enabled && !git.missing",
+          "group": "inline@1"
+        },
+        {
+          "command": "repoTree.discardAllInScope",
+          "when": "view == repoTree.repositories && viewItem == repoTree.scmChangeDir.changes && config.git.enabled && !git.missing",
+          "group": "inline@2"
+        },
+        {
+          "command": "repoTree.stageAllInScope",
+          "when": "view == repoTree.repositories && viewItem == repoTree.scmChangeDir.changes",
+          "group": "navigation@1"
+        },
+        {
+          "command": "repoTree.discardAllInScope",
+          "when": "view == repoTree.repositories && viewItem == repoTree.scmChangeDir.changes",
+          "group": "navigation@2"
+        },
+        {
+          "command": "repoTree.stageAllInScope",
+          "when": "view == repoTree.repositories && viewItem == repoTree.section.merge && config.git.enabled && !git.missing",
+          "group": "inline@1"
+        },
+        {
+          "command": "repoTree.stageAllInScope",
+          "when": "view == repoTree.repositories && viewItem == repoTree.section.merge",
+          "group": "navigation@1"
+        },
+        {
+          "command": "repoTree.stageAllInScope",
+          "when": "view == repoTree.repositories && viewItem == repoTree.scmChangeDir.merge && config.git.enabled && !git.missing",
+          "group": "inline@1"
+        },
+        {
+          "command": "repoTree.stageAllInScope",
+          "when": "view == repoTree.repositories && viewItem == repoTree.scmChangeDir.merge",
+          "group": "navigation@1"
+        },
+        {
+          "command": "repoTree.unstageFile",
+          "when": "view == repoTree.repositories && viewItem == repoTree.scmFile.staged && config.git.enabled && !git.missing",
+          "group": "inline@1"
+        },
+        {
+          "command": "repoTree.stageFile",
+          "when": "view == repoTree.repositories && viewItem == repoTree.scmFile.changes && config.git.enabled && !git.missing",
+          "group": "inline@1"
+        },
+        {
+          "command": "repoTree.discardFile",
+          "when": "view == repoTree.repositories && viewItem == repoTree.scmFile.changes && config.git.enabled && !git.missing",
+          "group": "inline@2"
+        },
+        {
+          "command": "repoTree.stageFile",
+          "when": "view == repoTree.repositories && viewItem == repoTree.scmFile.merge && config.git.enabled && !git.missing",
+          "group": "inline@1"
+        },
+        {
+          "command": "repoTree.openFile",
+          "when": "view == repoTree.repositories && viewItem =~ /^repoTree\\.scmFile\\./ && config.git.enabled && !git.missing",
+          "group": "inline@3"
+        },
+        {
+          "command": "repoTree.openDiff",
+          "when": "view == repoTree.repositories && viewItem =~ /^repoTree\\.scmFile\\./",
+          "group": "navigation@1"
+        },
+        {
+          "command": "repoTree.openFile",
+          "when": "view == repoTree.repositories && viewItem =~ /^repoTree\\.scmFile\\./",
+          "group": "navigation@2"
+        },
+        {
+          "command": "repoTree.unstageFile",
+          "when": "view == repoTree.repositories && viewItem == repoTree.scmFile.staged",
+          "group": "navigation@3"
+        },
+        {
+          "command": "repoTree.stageFile",
+          "when": "view == repoTree.repositories && viewItem == repoTree.scmFile.changes",
+          "group": "navigation@3"
+        },
+        {
+          "command": "repoTree.discardFile",
+          "when": "view == repoTree.repositories && viewItem == repoTree.scmFile.changes",
+          "group": "navigation@4"
+        },
+        {
+          "command": "repoTree.stageFile",
+          "when": "view == repoTree.repositories && viewItem == repoTree.scmFile.merge",
           "group": "navigation@3"
         },
         {
           "command": "repoTree.addToGitignore",
-          "when": "view == repoTree.repositories && viewItem == repoTree.scmChangeDir",
-          "group": "navigation@1"
+          "when": "view == repoTree.repositories && viewItem == repoTree.scmFile.changes",
+          "group": "navigation@5"
+        },
+        {
+          "command": "repoTree.addToGitignore",
+          "when": "view == repoTree.repositories && viewItem == repoTree.scmChangeDir.changes",
+          "group": "navigation@3"
         }
       ]
     }
@@ -242,7 +441,7 @@
   "scripts": {
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "test": "npm run compile && node --test out/tree.test.js out/scmTree.test.js out/gitignore.test.js",
+    "test": "npm run compile && node --test out/tree.test.js out/scmTree.test.js out/gitignore.test.js out/treeExpansion.test.js",
     "vscode:prepublish": "npm run compile"
   },
   "devDependencies": {

@@ -4,10 +4,8 @@ import type { RepoTreeNode } from './repoTreeNode'
 import { nodeRootPath } from './repoTreeNode'
 import {
   mergeRepoChanges,
-  pathsUnderDir,
-  primaryScmSection,
+  pathsInSectionUnderDir,
   relativeRepoPath,
-  type FileChangeState,
   type MergedChangeFile,
   type ScmSection,
 } from './scmTree'
@@ -36,6 +34,10 @@ export interface GitScmResourceGroup {
   resourceStates: GitScmResource[]
 }
 
+export interface GitCommitOptions {
+  all?: boolean | 'tracked'
+}
+
 export interface GitRepositoryRef {
   rootUri: vscode.Uri
   state: GitRepositoryState
@@ -47,7 +49,7 @@ export interface GitRepositoryRef {
   add(paths: string[]): Promise<void>
   revert(paths: string[]): Promise<void>
   clean(paths: string[]): Promise<void>
-  commit(message: string): Promise<void>
+  commit(message: string, opts?: GitCommitOptions): Promise<void>
 }
 
 export interface GitApiLite {
@@ -86,6 +88,10 @@ function absPathForRelative(rootPath: string, relativePath: string): string {
   return path.join(rootPath, ...relativePath.split('/'))
 }
 
+function absPathsForRelative(rootPath: string, relativePaths: string[]): string[] {
+  return relativePaths.map((p) => absPathForRelative(rootPath, p))
+}
+
 export function findScmResource(
   repo: GitRepositoryRef,
   relativePath: string,
@@ -109,9 +115,9 @@ export function findScmResource(
 export function findScmResourceForFile(
   repo: GitRepositoryRef,
   relativePath: string,
-  states: FileChangeState[]
+  section: ScmSection
 ): GitScmResource | undefined {
-  return findScmResource(repo, relativePath, primaryScmSection(states))
+  return findScmResource(repo, relativePath, section)
 }
 
 export async function runGitRepoCommand(
@@ -186,7 +192,34 @@ function mergedForRepo(git: GitApiLite | undefined, rootPath: string): MergedCha
   )
 }
 
-export async function revertPaths(
+export async function stagePaths(
+  getGit: () => GitApiLite | undefined,
+  rootPath: string,
+  paths: string[]
+): Promise<void> {
+  const repo = findGitRepository(getGit(), rootPath)
+  if (!repo || paths.length === 0) {
+    return
+  }
+  await repo.add(absPathsForRelative(repo.rootUri.fsPath, paths))
+}
+
+export async function unstagePaths(
+  getGit: () => GitApiLite | undefined,
+  rootPath: string,
+  paths: string[]
+): Promise<void> {
+  const repo = findGitRepository(getGit(), rootPath)
+  if (!repo || paths.length === 0) {
+    return
+  }
+  const indexed = indexPathsForRelative(repo, paths)
+  if (indexed.length > 0) {
+    await repo.revert(indexed)
+  }
+}
+
+export async function discardPaths(
   getGit: () => GitApiLite | undefined,
   rootPath: string,
   paths: string[]
@@ -197,32 +230,83 @@ export async function revertPaths(
   }
   const label = paths.length === 1 ? paths[0] : `${paths.length} files`
   const ok = await vscode.window.showWarningMessage(
-    `Revert changes in ${label}?`,
+    `Discard changes in ${label}?`,
     { modal: true },
-    'Revert'
+    'Discard'
   )
-  if (ok !== 'Revert') {
+  if (ok !== 'Discard') {
     return
   }
-
-  const indexed = indexPathsForRelative(repo, paths)
-  if (indexed.length > 0) {
-    await repo.revert(indexed)
-  }
-
   const toClean = fsPathsToClean(repo, paths)
   if (toClean.length > 0) {
     await repo.clean(toClean)
   }
 }
 
-export async function revertFolder(
+function gitErrorDetail(err: unknown): string | undefined {
+  if (!err || typeof err !== 'object') {
+    return undefined
+  }
+  const record = err as Record<string, unknown>
+  for (const key of ['stderr', 'gitStderr', 'stdout', 'gitStdout'] as const) {
+    const value = record[key]
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim()
+    }
+  }
+  return undefined
+}
+
+export async function commitRepository(
+  getGit: () => GitApiLite | undefined,
+  rootPath: string
+): Promise<void> {
+  const repo = findGitRepository(getGit(), rootPath)
+  if (!repo) {
+    void vscode.window.showErrorMessage('Repository Tree: Git repository not found for this row.')
+    return
+  }
+  const { indexChanges, workingTreeChanges, mergeChanges } = repo.state
+  const hasStaged = indexChanges.length > 0
+  const hasUnstaged = workingTreeChanges.length > 0 || mergeChanges.length > 0
+  if (!hasStaged && !hasUnstaged) {
+    void vscode.window.showWarningMessage('No changes to commit in this repository.')
+    return
+  }
+  const message = await vscode.window.showInputBox({
+    prompt: hasStaged ? 'Commit message' : 'Commit message (all unstaged changes will be included)',
+    placeHolder: 'Message',
+    value: repo.inputBox?.value ?? '',
+    validateInput: (value) => (value.trim().length > 0 ? undefined : 'Message required'),
+  })
+  if (!message?.trim()) {
+    return
+  }
+  const commitOpts: GitCommitOptions | undefined = hasStaged ? undefined : { all: true }
+  try {
+    await repo.commit(message.trim(), commitOpts)
+  } catch (err) {
+    const raw = err instanceof Error ? err.message : String(err)
+    const fromGit = gitErrorDetail(err)
+    const summary =
+      raw === 'Failed to execute git' || raw.startsWith('Git: Failed to execute git')
+        ? 'Git rejected the commit.'
+        : raw
+    const detailParts = [
+      fromGit,
+      'Check Output → Git for the full command log (missing user.name/user.email and pre-commit hooks are common causes).',
+    ].filter(Boolean)
+    void vscode.window.showErrorMessage(summary, { modal: true, detail: detailParts.join('\n\n') })
+  }
+}
+
+export function pathsInSection(
   getGit: () => GitApiLite | undefined,
   rootPath: string,
+  section: ScmSection,
   relativeDir: string
-): Promise<void> {
-  const paths = pathsUnderDir(mergedForRepo(getGit(), rootPath), relativeDir)
-  await revertPaths(getGit, rootPath, paths)
+): string[] {
+  return pathsInSectionUnderDir(mergedForRepo(getGit(), rootPath), section, relativeDir)
 }
 
 export async function openChangeDiff(
@@ -232,13 +316,13 @@ export async function openChangeDiff(
   if (item?.node.kind !== 'scmFile') {
     return
   }
-  const { rootPath, relativePath, states } = item.node
+  const { rootPath, relativePath, section } = item.node
   const repo = findGitRepository(getGit(), rootPath)
   if (!repo) {
     return
   }
 
-  const resource = findScmResourceForFile(repo, relativePath, states)
+  const resource = findScmResourceForFile(repo, relativePath, section)
   if (resource) {
     await resource.openChange()
     return
@@ -265,5 +349,14 @@ export async function openChangeFile(
   }
 }
 
-export const SCM_FILE_CONTEXT = 'repoTree.scmFile'
-export const SCM_CHANGE_DIR_CONTEXT = 'repoTree.scmChangeDir'
+export function sectionContextValue(section: ScmSection): string {
+  return `repoTree.section.${section}`
+}
+
+export function scmFileContextValue(section: ScmSection): string {
+  return `repoTree.scmFile.${section}`
+}
+
+export function scmChangeDirContextValue(section: ScmSection): string {
+  return `repoTree.scmChangeDir.${section}`
+}

@@ -4,6 +4,18 @@ All notable changes to **Repository Tree** are documented here.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- **Staged Changes**, **Changes**, and **Merge Changes** sections under each dirty repo, with path nesting inside each section (same path can appear in more than one section).
+- **Stage**, **Unstage**, and **Discard** on files and folders; **Stage All**, **Unstage All**, and **Discard All** on sections and path folders. Discard uses a confirmation dialog and only resets the working tree (unstage is separate).
+- **Commit** on the repo row (`showInputBox` + Git `commit`).
+
+### Removed
+
+- **Revert** actions that combined unstage and discard in one step.
+
 ## [0.2.0] - 2026-09-30
 
 ### Added

@@ -41,9 +41,13 @@ describe('filesForSection', () => {
       [{ uri: { fsPath: '/repo/a.txt' } }],
       []
     )
-    assert.equal(filesForSection(merged, 'staged').length, 1)
-    assert.equal(filesForSection(merged, 'changes').length, 1)
+    const staged = filesForSection(merged, 'staged')
+    const changes = filesForSection(merged, 'changes')
+    assert.equal(staged.length, 1)
+    assert.equal(changes.length, 1)
     assert.equal(filesForSection(merged, 'merge').length, 0)
+    assert.equal(staged.filter((f) => f.relativePath === 'a.txt').length, 1)
+    assert.equal(changes.filter((f) => f.relativePath === 'a.txt').length, 1)
   })
 
   it('returns empty for empty merged input', () => {

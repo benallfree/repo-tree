@@ -1,20 +1,34 @@
 import * as path from 'path'
 import * as vscode from 'vscode'
 import {
+  commitRepository,
+  discardPaths,
   findGitRepository,
   findScmResourceForFile,
   openChangeDiff,
   openChangeFile,
-  revertFolder,
-  revertPaths,
+  pathsInSection,
   runGitRepoCommand,
-  SCM_CHANGE_DIR_CONTEXT,
-  SCM_FILE_CONTEXT,
+  scmChangeDirContextValue,
+  scmFileContextValue,
+  sectionContextValue,
+  stagePaths,
+  unstagePaths,
   type GitRepositoryRef,
 } from './gitRepo'
 import { appendGitignoreLine, toGitignorePattern } from './gitignore'
-import { nodeRootPath, stableNodeId, type RepoTreeNode } from './repoTreeNode'
-import { childrenOfChangeDir, mergeRepoChanges, nestChangePaths, type NestedChangeNode } from './scmTree'
+import { nodeRootPath, scmSectionTreeId, stableNodeId, type RepoTreeNode } from './repoTreeNode'
+import {
+  childrenOfChangeDir,
+  filesForSection,
+  mergeRepoChanges,
+  nestChangePaths,
+  repoSectionHasFiles,
+  SCM_SECTION_LABELS,
+  SCM_SECTION_ORDER,
+  type NestedChangeNode,
+  type ScmSection,
+} from './scmTree'
 import {
   buildRepositoryTree,
   flattenRepositoryTree,
@@ -27,6 +41,7 @@ import {
   type RepoStatusInput,
   type TreeNode,
 } from './tree'
+import { TreeExpansionSession } from './treeExpansion'
 import { defaultViewOptions, loadViewOptions, type ViewOptions } from './viewState'
 
 type GitRepository = GitRepositoryRef & {
@@ -56,14 +71,20 @@ export class RepoTreeItem extends vscode.TreeItem {
     this.id = treeId
     this.label = labelForNode(node)
 
+    if (node.kind === 'scmSection') {
+      this.contextValue = sectionContextValue(node.section)
+      this.tooltip = node.name
+      this.iconPath = new vscode.ThemeIcon('list-tree')
+      return
+    }
     if (node.kind === 'scmChangeDir') {
-      this.contextValue = SCM_CHANGE_DIR_CONTEXT
+      this.contextValue = scmChangeDirContextValue(node.section)
       this.tooltip = path.join(node.rootPath, node.relativeDir)
       this.iconPath = new vscode.ThemeIcon('symbol-folder')
       return
     }
     if (node.kind === 'scmFile') {
-      this.contextValue = SCM_FILE_CONTEXT
+      this.contextValue = scmFileContextValue(node.section)
       this.tooltip = path.join(node.rootPath, node.relativePath)
       this.iconPath = new vscode.ThemeIcon('file')
       this.command = {
@@ -97,8 +118,27 @@ class RepositoryTreeProvider implements vscode.TreeDataProvider<RepoTreeItem> {
   private git?: GitApi
   private viewOptions: ViewOptions = { ...defaultViewOptions }
   private readonly wipActivity = new Map<string, number>()
+  readonly expansion = new TreeExpansionSession()
+  private syncingRootPath?: string
 
   constructor(private readonly getGit: () => GitApi | undefined) {}
+
+  setSyncingRoot(rootPath: string): void {
+    this.syncingRootPath = rootPath
+    this.refresh()
+  }
+
+  clearSyncingRoot(): void {
+    if (!this.syncingRootPath) {
+      return
+    }
+    this.syncingRootPath = undefined
+    this.refresh()
+  }
+
+  isSyncingRoot(rootPath: string): boolean {
+    return this.syncingRootPath === rootPath
+  }
 
   setViewOptions(options: ViewOptions): void {
     this.viewOptions = options
@@ -111,6 +151,27 @@ class RepositoryTreeProvider implements vscode.TreeDataProvider<RepoTreeItem> {
 
   refresh(): void {
     this._onDidChangeTreeData.fire(undefined)
+  }
+
+  findRepoItem(rootPath: string): RepoTreeItem | undefined {
+    const isRepoRow = (node: RepoTreeNode): boolean =>
+      node.kind === 'repo' ||
+      (node.kind === 'folder' && Boolean(node.rootPath) && node.rootPath === rootPath)
+
+    const walk = (items: RepoTreeItem[]): RepoTreeItem | undefined => {
+      for (const item of items) {
+        if (isRepoRow(item.node)) {
+          return item
+        }
+        const kids = this.getChildren(item)
+        const found = walk(kids)
+        if (found) {
+          return found
+        }
+      }
+      return undefined
+    }
+    return walk(this.getChildren())
   }
 
   bindGit(api: GitApi): void {
@@ -161,8 +222,41 @@ class RepositoryTreeProvider implements vscode.TreeDataProvider<RepoTreeItem> {
   }
 
   getTreeItem(element: RepoTreeItem): vscode.TreeItem {
+    this.applyRepoSyncContext(element)
+    this.expansion.applyToItem(element)
     this.applyScmResourceStyle(element)
     return element
+  }
+
+  private applyRepoSyncContext(item: RepoTreeItem): void {
+    const rootPath =
+      item.node.kind === 'repo'
+        ? item.node.rootPath
+        : item.node.kind === 'folder'
+          ? item.node.rootPath
+          : undefined
+    if (rootPath && this.isSyncingRoot(rootPath)) {
+      item.contextValue = 'repoTree.repo.syncing'
+    }
+  }
+
+  /** Mark every collapsible node under `root` as expanded (first repo open in session). */
+  seedSubtreeExpanded(root: RepoTreeItem): void {
+    const queue: RepoTreeItem[] = [root]
+    const seen = new Set<string>()
+    while (queue.length > 0) {
+      const item = queue.shift()!
+      if (seen.has(item.treeId)) {
+        continue
+      }
+      seen.add(item.treeId)
+      if (item.collapsibleState !== vscode.TreeItemCollapsibleState.None) {
+        this.expansion.markExpanded(item.treeId)
+      }
+      for (const child of this.getChildren(item)) {
+        queue.push(child)
+      }
+    }
   }
 
   private applyScmResourceStyle(item: RepoTreeItem): void {
@@ -175,7 +269,7 @@ class RepositoryTreeProvider implements vscode.TreeDataProvider<RepoTreeItem> {
     const fileUri = vscode.Uri.file(path.join(node.rootPath, node.relativePath))
     item.resourceUri = fileUri
 
-    const resource = repo ? findScmResourceForFile(repo, node.relativePath, node.states) : undefined
+    const resource = repo ? findScmResourceForFile(repo, node.relativePath, node.section) : undefined
     if (!resource) {
       return
     }
@@ -203,8 +297,17 @@ class RepositoryTreeProvider implements vscode.TreeDataProvider<RepoTreeItem> {
 
     if (element) {
       const { node, treeId } = element
+      if (node.kind === 'scmSection') {
+        return this.changeItemsForSection(node.rootPath, git, node.section, treeId, '')
+      }
       if (node.kind === 'scmChangeDir') {
-        return this.changeItemsAt(node.rootPath, git, node.relativeDir, treeId)
+        return this.changeItemsForSection(
+          node.rootPath,
+          git,
+          node.section,
+          treeId,
+          node.relativeDir
+        )
       }
       if (node.kind === 'scmFile') {
         return []
@@ -214,7 +317,7 @@ class RepositoryTreeProvider implements vscode.TreeDataProvider<RepoTreeItem> {
       const items: RepoTreeItem[] = []
 
       if (rootPath && isDirty(rootPath)) {
-        items.push(...this.changeItemsForRepo(rootPath, git, treeId))
+        items.push(...this.sectionItemsForRepo(rootPath, git, treeId))
       }
 
       if (node.kind === 'folder') {
@@ -255,34 +358,58 @@ class RepositoryTreeProvider implements vscode.TreeDataProvider<RepoTreeItem> {
     )
   }
 
-  private changeItemsForRepo(rootPath: string, git: GitApi, parentTreeId: string): RepoTreeItem[] {
-    const nested = nestChangePaths(this.mergedForRepo(rootPath, git), this.viewOptions.layout === 'flat')
-    return nested.map((n) => this.nestedToItem(n, rootPath, parentTreeId))
+  private sectionItemsForRepo(rootPath: string, git: GitApi, parentTreeId: string): RepoTreeItem[] {
+    const merged = this.mergedForRepo(rootPath, git)
+    return SCM_SECTION_ORDER.filter((section) => repoSectionHasFiles(merged, section)).map(
+      (section) => {
+        const treeNode: RepoTreeNode = {
+          kind: 'scmSection',
+          rootPath,
+          section,
+          name: SCM_SECTION_LABELS[section],
+        }
+        const treeId = stableNodeId(treeNode, parentTreeId)
+        return new RepoTreeItem(
+          treeNode,
+          treeId,
+          this.expansion.collapsibleState(treeId, true)
+        )
+      }
+    )
   }
 
-  private changeItemsAt(
+  private changeItemsForSection(
     rootPath: string,
     git: GitApi,
-    relativeDir: string,
-    parentTreeId: string
+    section: ScmSection,
+    parentTreeId: string,
+    relativeDir: string
   ): RepoTreeItem[] {
-    const nested = nestChangePaths(this.mergedForRepo(rootPath, git), this.viewOptions.layout === 'flat')
-    const level = childrenOfChangeDir(nested, relativeDir)
-    return level.map((n) => this.nestedToItem(n, rootPath, parentTreeId))
+    const merged = this.mergedForRepo(rootPath, git)
+    const sectionFiles = filesForSection(merged, section)
+    const nested = nestChangePaths(sectionFiles, this.viewOptions.layout === 'flat')
+    const level =
+      relativeDir === '' ? nested : childrenOfChangeDir(nested, relativeDir)
+    return level.map((n) => this.nestedToItem(n, rootPath, section, parentTreeId))
   }
 
   getChildItems(element?: RepoTreeItem): RepoTreeItem[] {
     return this.getChildren(element)
   }
 
-  private nestedToItem(node: NestedChangeNode, rootPath: string, parentTreeId: string): RepoTreeItem {
+  private nestedToItem(
+    node: NestedChangeNode,
+    rootPath: string,
+    section: ScmSection,
+    parentTreeId: string
+  ): RepoTreeItem {
     if (node.kind === 'file') {
       const treeNode: RepoTreeNode = {
         kind: 'scmFile',
         rootPath,
+        section,
         relativePath: node.relativePath,
         name: node.name,
-        states: node.states,
       }
       return new RepoTreeItem(
         treeNode,
@@ -293,15 +420,16 @@ class RepositoryTreeProvider implements vscode.TreeDataProvider<RepoTreeItem> {
     const treeNode: RepoTreeNode = {
       kind: 'scmChangeDir',
       rootPath,
+      section,
       relativeDir: node.relativeDir,
       name: node.name,
     }
+    const treeId = stableNodeId(treeNode, parentTreeId)
+    const hasChildren = node.children.length > 0
     return new RepoTreeItem(
       treeNode,
-      stableNodeId(treeNode, parentTreeId),
-      node.children.length > 0
-        ? vscode.TreeItemCollapsibleState.Expanded
-        : vscode.TreeItemCollapsibleState.None
+      treeId,
+      this.expansion.collapsibleState(treeId, hasChildren)
     )
   }
 
@@ -310,10 +438,8 @@ class RepositoryTreeProvider implements vscode.TreeDataProvider<RepoTreeItem> {
     const rootPath = repoRootPath(node)
     const hasPathChildren = node.kind === 'folder' && node.children.length > 0
     const dirty = rootPath ? isDirty(rootPath) : false
-    const collapsible =
-      hasPathChildren || dirty
-        ? vscode.TreeItemCollapsibleState.Collapsed
-        : vscode.TreeItemCollapsibleState.None
+    const hasChildren = hasPathChildren || dirty
+    const collapsible = this.expansion.collapsibleState(treeId, hasChildren)
     const item = new RepoTreeItem(node, treeId, collapsible)
     const iconId = rootPath ? 'repo' : 'symbol-folder'
     if (treeHasDirtyRepo(node, isDirty)) {
@@ -321,6 +447,9 @@ class RepositoryTreeProvider implements vscode.TreeDataProvider<RepoTreeItem> {
       item.label = { label: node.name, highlights: [[0, node.name.length]] }
     } else {
       item.iconPath = new vscode.ThemeIcon(iconId)
+    }
+    if (rootPath && this.isSyncingRoot(rootPath)) {
+      item.contextValue = 'repoTree.repo.syncing'
     }
     if (rootPath) {
       const git = this.git ?? this.getGit()
@@ -365,6 +494,119 @@ async function syncViewContext(options: ViewOptions): Promise<void> {
   await vscode.commands.executeCommand('setContext', 'repoTree.hideUnchanged', options.hideUnchanged)
 }
 
+/** Drives view/title SCM actions from the current tree selection (inline row icons are hover-only). */
+function selectionKindFromNode(node: RepoTreeNode): string {
+  if (node.kind === 'scmSection') {
+    return `section.${node.section}`
+  }
+  if (node.kind === 'scmChangeDir') {
+    return `dir.${node.section}`
+  }
+  if (node.kind === 'scmFile') {
+    return `file.${node.section}`
+  }
+  if (node.kind === 'repo' || (node.kind === 'folder' && node.rootPath)) {
+    return 'repo'
+  }
+  return 'none'
+}
+
+async function syncSelectionContext(tree: vscode.TreeView<RepoTreeItem>): Promise<void> {
+  const kind = tree.selection[0] ? selectionKindFromNode(tree.selection[0].node) : 'none'
+  await vscode.commands.executeCommand('setContext', 'repoTree.selectionKind', kind)
+}
+
+function repoHadStagedSection(rootPath: string): boolean {
+  const git = getGitApi()
+  const repo = git ? findGitRepository(git, rootPath) : undefined
+  if (!repo) {
+    return false
+  }
+  return repoSectionHasFiles(
+    mergeRepoChanges(
+      repo.rootUri.fsPath,
+      repo.state.indexChanges,
+      repo.state.workingTreeChanges,
+      repo.state.mergeChanges
+    ),
+    'staged'
+  )
+}
+
+async function revealStagedChangesSection(
+  tree: vscode.TreeView<RepoTreeItem>,
+  provider: RepositoryTreeProvider,
+  rootPath: string
+): Promise<void> {
+  const sectionNode: RepoTreeNode = {
+    kind: 'scmSection',
+    rootPath,
+    section: 'staged',
+    name: SCM_SECTION_LABELS.staged,
+  }
+  const sectionItem = new RepoTreeItem(
+    sectionNode,
+    stableNodeId(sectionNode),
+    vscode.TreeItemCollapsibleState.Expanded
+  )
+
+  for (const delayMs of [0, 50, 150, 300]) {
+    if (delayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs))
+    }
+    try {
+      const repoItem = provider.findRepoItem(rootPath)
+      if (repoItem) {
+        await tree.reveal(repoItem, { expand: true, select: false, focus: false })
+      }
+      await tree.reveal(sectionItem, { expand: true, select: false, focus: false })
+      return
+    } catch {
+      // Tree nodes may not exist until Git refresh finishes.
+    }
+  }
+}
+
+async function runGitSync(
+  provider: RepositoryTreeProvider,
+  tree: vscode.TreeView<RepoTreeItem>,
+  item?: RepoTreeItem
+): Promise<void> {
+  const resolved = resolveTreeItem(tree, item)
+  const rootPath = resolved ? nodeRootPath(resolved.node) : undefined
+  if (!rootPath || provider.isSyncingRoot(rootPath)) {
+    return
+  }
+  provider.setSyncingRoot(rootPath)
+  try {
+    await runGitRepoCommand(getGitApi, 'git.sync', resolved)
+  } finally {
+    provider.clearSyncingRoot()
+  }
+}
+
+async function runStageWithReveal(
+  provider: RepositoryTreeProvider,
+  tree: vscode.TreeView<RepoTreeItem>,
+  rootPath: string,
+  paths: string[],
+  sourceSection: ScmSection
+): Promise<void> {
+  if (paths.length === 0) {
+    return
+  }
+  const hadStaged = repoHadStagedSection(rootPath)
+  provider.expansion.copySectionExpansion(rootPath, sourceSection, 'staged', paths)
+  if (!hadStaged) {
+    provider.expansion.markExpanded(scmSectionTreeId(rootPath, 'staged'))
+  }
+  await stagePaths(getGitApi, rootPath, paths)
+  provider.refresh()
+  if (!hadStaged) {
+    await revealStagedChangesSection(tree, provider, rootPath)
+  }
+}
+
 function resolveTreeItem(
   tree: vscode.TreeView<RepoTreeItem>,
   item?: RepoTreeItem
@@ -397,6 +639,17 @@ function scmChangeDirFromItem(
   return undefined
 }
 
+function scmSectionFromItem(
+  tree: vscode.TreeView<RepoTreeItem>,
+  item?: RepoTreeItem
+): Extract<RepoTreeNode, { kind: 'scmSection' }> | undefined {
+  const resolved = resolveTreeItem(tree, item)
+  if (resolved?.node.kind === 'scmSection') {
+    return resolved.node
+  }
+  return undefined
+}
+
 function gitignoreTarget(item?: RepoTreeItem): { rootPath: string; entry: string } | undefined {
   if (item?.node.kind === 'scmFile') {
     return { rootPath: item.node.rootPath, entry: toGitignorePattern(item.node.relativePath, false) }
@@ -407,9 +660,25 @@ function gitignoreTarget(item?: RepoTreeItem): { rootPath: string; entry: string
   return undefined
 }
 
+function sectionScopeFromItem(
+  tree: vscode.TreeView<RepoTreeItem>,
+  item?: RepoTreeItem
+): { rootPath: string; section: ScmSection; relativeDir: string } | undefined {
+  const section = scmSectionFromItem(tree, item)
+  if (section) {
+    return { rootPath: section.rootPath, section: section.section, relativeDir: '' }
+  }
+  const dir = scmChangeDirFromItem(tree, item)
+  if (dir) {
+    return { rootPath: dir.rootPath, section: dir.section, relativeDir: dir.relativeDir }
+  }
+  return undefined
+}
+
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const stored = loadViewOptions(context.globalState.get<Partial<ViewOptions>>(STORAGE_KEY))
   await syncViewContext(stored)
+  await vscode.commands.executeCommand('setContext', 'repoTree.selectionKind', 'none')
 
   const provider = new RepositoryTreeProvider(getGitApi)
 
@@ -454,6 +723,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   })
   context.subscriptions.push(tree, provider)
 
+  context.subscriptions.push(
+    tree.onDidChangeSelection(() => {
+      void syncSelectionContext(tree)
+    })
+  )
+  void syncSelectionContext(tree)
+
+  const repoRootFromTreeNode = (node: RepoTreeNode): string | undefined => {
+    if (node.kind === 'repo') {
+      return node.rootPath
+    }
+    if (node.kind === 'folder' && node.rootPath) {
+      return node.rootPath
+    }
+    return undefined
+  }
+
   const expandRepoSubtree = async (root: RepoTreeItem): Promise<void> => {
     const queue: RepoTreeItem[] = [root]
     const seen = new Set<string>()
@@ -468,6 +754,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (child.collapsibleState === vscode.TreeItemCollapsibleState.None) {
           continue
         }
+        provider.expansion.markExpanded(child.treeId)
         try {
           await tree.reveal(child, { expand: true, select: false, focus: false })
         } catch {
@@ -480,9 +767,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   context.subscriptions.push(
     tree.onDidExpandElement((event) => {
-      if (event.element.node.kind === 'repo') {
-        void expandRepoSubtree(event.element)
+      const item = event.element
+      provider.expansion.recordExpanded(item.treeId, true)
+      const repoRoot = repoRootFromTreeNode(item.node)
+      if (repoRoot && !provider.expansion.hasRepoOpenedInSession(repoRoot)) {
+        provider.expansion.markRepoOpenedInSession(repoRoot)
+        provider.seedSubtreeExpanded(item)
+        void expandRepoSubtree(item)
       }
+    }),
+    tree.onDidCollapseElement((event) => {
+      provider.expansion.recordExpanded(event.element.treeId, false)
     })
   )
 
@@ -561,28 +856,70 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('repoTree.openFile', (item?: RepoTreeItem) =>
       openChangeFile(getGitApi, resolveTreeItem(tree, item))
     ),
-    vscode.commands.registerCommand('repoTree.gitSync', (item?: RepoTreeItem) =>
-      runGitRepoCommand(getGitApi, 'git.sync', item)
-    ),
+    vscode.commands.registerCommand('repoTree.gitSync', (item?: RepoTreeItem) => {
+      void runGitSync(provider, tree, item)
+    }),
+    vscode.commands.registerCommand('repoTree.gitSyncBusy', () => {
+      // Spinning affordance only; sync runs via repoTree.gitSync.
+    }),
     vscode.commands.registerCommand('repoTree.gitPull', (item?: RepoTreeItem) =>
       runGitRepoCommand(getGitApi, 'git.pull', item)
     ),
     vscode.commands.registerCommand('repoTree.gitPush', (item?: RepoTreeItem) =>
       runGitRepoCommand(getGitApi, 'git.push', item)
     ),
-    vscode.commands.registerCommand('repoTree.revertFile', (item?: RepoTreeItem) => {
-      const file = scmFileFromItem(tree, item)
-      if (!file) {
+    vscode.commands.registerCommand('repoTree.commit', (item?: RepoTreeItem) => {
+      const resolved = resolveTreeItem(tree, item)
+      const rootPath = resolved ? nodeRootPath(resolved.node) : undefined
+      if (!rootPath) {
         return
       }
-      void revertPaths(getGitApi, file.rootPath, [file.relativePath])
+      void commitRepository(getGitApi, rootPath)
     }),
-    vscode.commands.registerCommand('repoTree.revertFolder', (item?: RepoTreeItem) => {
-      const dir = scmChangeDirFromItem(tree, item)
-      if (!dir) {
+    vscode.commands.registerCommand('repoTree.stageFile', (item?: RepoTreeItem) => {
+      const file = scmFileFromItem(tree, item)
+      if (!file || (file.section !== 'changes' && file.section !== 'merge')) {
         return
       }
-      void revertFolder(getGitApi, dir.rootPath, dir.relativeDir)
+      void runStageWithReveal(provider, tree, file.rootPath, [file.relativePath], file.section)
+    }),
+    vscode.commands.registerCommand('repoTree.unstageFile', (item?: RepoTreeItem) => {
+      const file = scmFileFromItem(tree, item)
+      if (!file || file.section !== 'staged') {
+        return
+      }
+      void unstagePaths(getGitApi, file.rootPath, [file.relativePath])
+    }),
+    vscode.commands.registerCommand('repoTree.discardFile', (item?: RepoTreeItem) => {
+      const file = scmFileFromItem(tree, item)
+      if (!file || file.section !== 'changes') {
+        return
+      }
+      void discardPaths(getGitApi, file.rootPath, [file.relativePath])
+    }),
+    vscode.commands.registerCommand('repoTree.stageAllInScope', (item?: RepoTreeItem) => {
+      const scope = sectionScopeFromItem(tree, item)
+      if (!scope || scope.section === 'staged') {
+        return
+      }
+      const paths = pathsInSection(getGitApi, scope.rootPath, scope.section, scope.relativeDir)
+      void runStageWithReveal(provider, tree, scope.rootPath, paths, scope.section)
+    }),
+    vscode.commands.registerCommand('repoTree.unstageAllInScope', (item?: RepoTreeItem) => {
+      const scope = sectionScopeFromItem(tree, item)
+      if (!scope || scope.section !== 'staged') {
+        return
+      }
+      const paths = pathsInSection(getGitApi, scope.rootPath, scope.section, scope.relativeDir)
+      void unstagePaths(getGitApi, scope.rootPath, paths)
+    }),
+    vscode.commands.registerCommand('repoTree.discardAllInScope', (item?: RepoTreeItem) => {
+      const scope = sectionScopeFromItem(tree, item)
+      if (!scope || scope.section !== 'changes') {
+        return
+      }
+      const paths = pathsInSection(getGitApi, scope.rootPath, scope.section, scope.relativeDir)
+      void discardPaths(getGitApi, scope.rootPath, paths)
     }),
     vscode.commands.registerCommand('repoTree.addToGitignore', (item?: RepoTreeItem) => {
       void addPathToGitignore(resolveTreeItem(tree, item))

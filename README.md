@@ -30,11 +30,13 @@ Hide the built-in **Repositories** section from Source Control → `...` → Vie
 | Sort | Name, or recent WIP (last dirty activity in this window) |
 | Filter | Hide clean repos; tree mode keeps parent folders |
 
-For inline **Revert** on changed file and path-folder rows, set `"scm.alwaysShowActions": true` in settings.
+Row action icons (stage, discard, commit, and similar) appear when you **hover or select** that row. The built-in **Changes** list uses a different control that keeps icons on every row; VS Code does not expose that for custom tree views. With a repo, section, folder, or changed file **selected**, the same actions also show in the **Repository Tree** panel toolbar above the list. Right-click any change row for the full context menu.
 
 ### Dirty repos
 
-Expand a dirty repo to see changed files nested by path (no Staged/Changes section headers). Click a changed file row to open the diff (`git.openChange`). The go-to-file icon opens the working copy in the editor. **Revert** on a file or folder unstages and discards back to HEAD (including untracked under that path). Repo rows keep sync, pull, and push.
+Expand a dirty repo to see **Staged Changes**, **Changes**, and **Merge Changes** (only sections that have files), each with path-nested files and folders. A path that is both staged and unstaged appears under both sections, same as the built-in Changes view.
+
+Click a changed file row to open the diff. Use **Stage** / **Unstage** / **Discard** on files or **Stage All** / **Unstage All** / **Discard All** on a section or folder. Discard asks for confirmation. **Commit** on the repo row opens a message prompt. If anything is staged, only staged changes are committed. If nothing is staged, **Commit** stages and commits all modified files (same as stock **Commit All**). Repo rows also keep sync, pull, and push.
 
 If [Git Graph](https://marketplace.visualstudio.com/items?itemName=mhutchie.git-graph) or GitLens is installed, the same graph action that **Changes** shows on each repository appears on the repo row.
 
@@ -43,9 +45,11 @@ If [Git Graph](https://marketplace.visualstudio.com/items?itemName=mhutchie.git-
 ```bash
 npm install
 npm test
-npm run compile
+./scripts/install.sh
 ```
 
-Open this folder in Cursor, run **Run Extension** (`.vscode/launch.json`). The Extension Development Host opens `root.code-workspace`.
+After **every** change to `src/` or `package.json`, run **`./scripts/install.sh`** again so Cursor loads the updated build (compile alone is not enough). Reload the window to smoke-test in the main app.
+
+Optional: **Run Extension** (`.vscode/launch.json`) opens an Extension Development Host with `root.code-workspace`.
 
 Release notes: [CHANGELOG.md](./CHANGELOG.md).

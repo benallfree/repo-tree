@@ -5,6 +5,16 @@ export type FileChangeState = 'staged' | 'changes' | 'merge'
 
 export type ScmSection = 'staged' | 'changes' | 'merge'
 
+export function fileStateForSection(section: ScmSection): FileChangeState {
+  return section
+}
+
+export const SCM_SECTION_LABELS: Record<ScmSection, string> = {
+  staged: 'Staged Changes',
+  changes: 'Changes',
+  merge: 'Merge Changes',
+}
+
 export interface GitChangeLike {
   uri: { fsPath: string }
 }

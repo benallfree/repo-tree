@@ -1,25 +1,32 @@
 import type { TreeNode } from './tree'
 import { repoRootPath } from './tree'
-import type { FileChangeState } from './scmTree'
-
-export type { FileChangeState }
+import type { ScmSection } from './scmTree'
 
 export type RepoTreeNode =
   | TreeNode
-  | { kind: 'scmChangeDir'; rootPath: string; relativeDir: string; name: string }
+  | { kind: 'scmSection'; rootPath: string; section: ScmSection; name: string }
+  | { kind: 'scmChangeDir'; rootPath: string; section: ScmSection; relativeDir: string; name: string }
   | {
       kind: 'scmFile'
       rootPath: string
+      section: ScmSection
       relativePath: string
       name: string
-      states: FileChangeState[]
     }
 
 export function nodeRootPath(node: RepoTreeNode): string | undefined {
-  if (node.kind === 'scmChangeDir' || node.kind === 'scmFile') {
+  if (node.kind === 'scmSection' || node.kind === 'scmChangeDir' || node.kind === 'scmFile') {
     return node.rootPath
   }
   return repoRootPath(node)
+}
+
+export function scmSectionTreeId(rootPath: string, section: ScmSection): string {
+  return `${rootPath}:section:${section}`
+}
+
+export function scmDirTreeId(rootPath: string, section: ScmSection, relativeDir: string): string {
+  return `${rootPath}:${section}:dir:${relativeDir || '.'}`
 }
 
 export function stableNodeId(node: RepoTreeNode, parentId?: string): string {
@@ -33,8 +40,11 @@ export function stableNodeId(node: RepoTreeNode, parentId?: string): string {
     const base = parentId ?? 'root'
     return `${base}/folder:${node.name}`
   }
-  if (node.kind === 'scmChangeDir') {
-    return `${node.rootPath}:dir:${node.relativeDir || '.'}`
+  if (node.kind === 'scmSection') {
+    return `${node.rootPath}:section:${node.section}`
   }
-  return `${node.rootPath}:file:${node.relativePath}`
+  if (node.kind === 'scmChangeDir') {
+    return `${node.rootPath}:${node.section}:dir:${node.relativeDir || '.'}`
+  }
+  return `${node.rootPath}:${node.section}:file:${node.relativePath}`
 }
