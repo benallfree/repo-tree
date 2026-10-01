@@ -6,11 +6,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-01
+
 ### Added
 
 - **Staged Changes**, **Changes**, and **Merge Changes** sections under each dirty repo, with path nesting inside each section (same path can appear in more than one section).
 - **Stage**, **Unstage**, and **Discard** on files and folders; **Stage All**, **Unstage All**, and **Discard All** on sections and path folders. Discard uses a confirmation dialog and only resets the working tree (unstage is separate).
-- **Commit** on the repo row (`showInputBox` + Git `commit`).
+- **Commit** on the repo row (`showInputBox` + Git `commit`). If nothing is staged, commit includes all modified files (same as stock **Commit All**).
+- **Repository Tree** panel toolbar actions driven by selection (commit, stage, discard, open diff, and related).
+- Session **expand/collapse memory** per tree node; the first time you open a repo in a window, its full subtree expands.
+- When **Staged Changes** first appears, that section opens expanded; path folders copy expand/collapse from **Changes** (or **Merge**).
+- **Sync** shows a spinning icon on the syncing repo until `git.sync` finishes.
+- Local **`./scripts/install.sh`** bumps a `-bN` build suffix in `package.json` and refreshes the Cursor symlink; counters in gitignored `.build-number` / `.build-base`.
+- **`AGENTS.md`** and **local install** Cursor rule for agents.
+
+### Changed
+
+- Clearer errors when commit fails (empty index vs Git hook / identity issues).
 
 ### Removed
 
