@@ -24,15 +24,9 @@ Hide the built-in **Repositories** section from Source Control → `...` → Vie
 
 ### View toolbar
 
-Toolbar layout follows the built-in **Changes** view: view options first, then repo git actions, then change actions.
+The list is a custom view, so each **repo row** keeps its actions visible: branch, ahead/behind counts, sync, commit, refresh, graph (if Git Graph or GitLens is installed), and **…** for pull, push, reveal, and open in a new window. File and section rows keep stage, unstage, and discard on the row.
 
-| Group | Controls |
-| --- | --- |
-| View (`navigation`) | Tree / flat, sort, filter, refresh tree |
-| Repo (repo selected) | Sync, commit, refresh, then **…** (pull, push, reveal, open in window) |
-| Changes (`2_git`, file/section selected) | Stage / unstage, discard, open diff, open file |
-
-On a **repo row** (hover or select), inline icons match **Changes**: sync, commit, refresh, graph (if Git Graph / GitLens is installed), **…** for pull/push and folder actions. Pull and push are not separate row icons. With a row **selected**, the same repo actions also appear in the panel title bar. Right-click any row for the full context menu.
+The panel title bar still switches tree/flat layout, sort, unchanged filter, and refresh.
 
 ### Dirty repos
 

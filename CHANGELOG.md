@@ -6,6 +6,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Repository Tree is a custom view. Repo rows show branch, ahead/behind counts, sync, commit, refresh, and more actions in a fixed cluster.
+
 ## [0.3.0] - 2026-10-01
 
 ### Added

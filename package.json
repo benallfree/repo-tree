@@ -28,7 +28,8 @@
       "scm": [
         {
           "id": "repoTree.repositories",
-          "name": "Repository Tree"
+          "name": "Repository Tree",
+          "type": "webview"
         }
       ]
     },
