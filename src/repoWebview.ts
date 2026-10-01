@@ -114,7 +114,11 @@ function html(): string {
     opacity: 0.9;
     font-size: 12px;
     white-space: nowrap;
+    cursor: pointer;
+    border-radius: 3px;
+    padding: 0 2px;
   }
+  .branch:hover { background: var(--vscode-toolbar-hoverBackground); }
   .counts {
     font-size: 11px;
     margin-right: 2px;
@@ -189,7 +193,7 @@ const I = {
   graph: '<svg viewBox="0 0 16 16"><path fill="currentColor" d="M3 12h2V8H3v4zm4 0h2V4H7v8zm4 0h2V6h-2v6z"/></svg>',
   more: '<svg viewBox="0 0 16 16"><circle cx="3" cy="8" r="1.2" fill="currentColor"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/><circle cx="13" cy="8" r="1.2" fill="currentColor"/></svg>',
   add: '<svg viewBox="0 0 16 16"><path fill="currentColor" d="M7.2 2h1.6v5.2H14v1.6H8.8V14H7.2V8.8H2V7.2h5.2V2z"/></svg>',
-  discard: '<svg viewBox="0 0 16 16"><path fill="currentColor" d="M3 3h7l3 3v7H3V3zm6.2 1.2V6H12L9.2 4.2zM4.5 8.5l2 2 5-5 1 1-6 6-3-3 1-1z"/></svg>',
+  revert: '<svg viewBox="0 0 16 16"><path fill="currentColor" d="M8 3a5 5 0 00-4.6 3H5.5L3 8.5 0.5 6h2.1A6.5 6.5 0 118 14.5V13a5 5 0 100-10z"/></svg>',
   remove: '<svg viewBox="0 0 16 16"><path fill="currentColor" d="M3 7.2h10v1.6H3z"/></svg>'
 }
 
@@ -254,20 +258,18 @@ function row(node, depth, state) {
   if (!node.hasChildren) chevron.classList.add('empty')
   if (node.expanded) chevron.style.transform = 'rotate(90deg)'
   main.appendChild(chevron)
+  const isRepo = node.kind === 'repo' || (node.kind === 'folder' && node.rootPath)
   const glyph = document.createElement('span')
-  glyph.innerHTML = node.kind === 'folder' || node.kind === 'dir' || node.kind === 'section' ? I.folder : (node.kind === 'repo' ? I.repo : '')
+  glyph.innerHTML = isRepo ? I.repo : (node.kind === 'folder' || node.kind === 'dir' || node.kind === 'section' ? I.folder : '')
   if (node.kind !== 'file') main.appendChild(glyph)
   const name = document.createElement('span')
   name.className = 'name' + (node.dirty ? ' dirty' : '')
   name.textContent = node.name
-  if (node.kind === 'file') {
-    name.classList.add('clickable')
-    name.addEventListener('click', (e) => {
-      e.stopPropagation()
-      postAction('openDiff', node)
-    })
-  }
   main.appendChild(name)
+  if (node.kind === 'file') {
+    main.classList.add('clickable')
+    main.addEventListener('click', () => postAction('openDiff', node))
+  }
   if (node.hasChildren && (node.kind === 'folder' || node.kind === 'dir' || node.kind === 'section')) {
     main.classList.add('clickable')
     main.addEventListener('click', () => {
@@ -278,13 +280,18 @@ function row(node, depth, state) {
 
   const actions = document.createElement('div')
   actions.className = 'actions'
-  if (node.kind === 'repo' && node.rootPath) {
+  if (isRepo && node.rootPath) {
     const branch = document.createElement('span')
     branch.className = 'branch'
+    branch.title = 'Switch branch'
     branch.innerHTML = I.branch
     const label = document.createElement('span')
     label.textContent = node.branch || ''
     branch.appendChild(label)
+    branch.addEventListener('click', (e) => {
+      e.stopPropagation()
+      postAction('checkout', node)
+    })
     actions.appendChild(branch)
     const c = counts(node)
     if (c) {
@@ -309,21 +316,21 @@ function row(node, depth, state) {
       letter.textContent = node.letter
       actions.appendChild(letter)
     }
+    if (node.section === 'staged' || node.section === 'changes') {
+      actions.appendChild(btn(I.revert, 'Revert', () => postAction('revert', node)))
+    }
     if (node.section === 'staged') {
       actions.appendChild(btn(I.remove, 'Unstage', () => postAction('unstage', node)))
-    } else if (node.section === 'changes') {
-      actions.appendChild(btn(I.add, 'Stage', () => postAction('stage', node)))
-      actions.appendChild(btn(I.discard, 'Discard', () => postAction('discard', node)))
-    } else if (node.section === 'merge') {
+    } else if (node.section === 'changes' || node.section === 'merge') {
       actions.appendChild(btn(I.add, 'Stage', () => postAction('stage', node)))
     }
   } else if (node.kind === 'section' || node.kind === 'dir') {
+    if (node.section === 'staged' || node.section === 'changes') {
+      actions.appendChild(btn(I.revert, 'Revert', () => postAction('revert', node)))
+    }
     if (node.section === 'staged') {
       actions.appendChild(btn(I.remove, 'Unstage All', () => postAction('unstageAll', node)))
-    } else if (node.section === 'changes') {
-      actions.appendChild(btn(I.add, 'Stage All', () => postAction('stageAll', node)))
-      actions.appendChild(btn(I.discard, 'Discard All', () => postAction('discardAll', node)))
-    } else if (node.section === 'merge') {
+    } else if (node.section === 'changes' || node.section === 'merge') {
       actions.appendChild(btn(I.add, 'Stage All', () => postAction('stageAll', node)))
     }
   }

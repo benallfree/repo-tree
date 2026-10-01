@@ -3,6 +3,7 @@ import * as vscode from 'vscode'
 import {
   commitRepository,
   discardPaths,
+  revertPaths,
   findGitRepository,
   findScmResourceForFile,
   openChangeDiff,
@@ -798,6 +799,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           ? { kind: 'scmFile', rootPath, section, relativePath, name: path.basename(relativePath) }
           : undefined
       switch (message.action) {
+        case 'checkout':
+          await runGitRepoCommand(getGitApi, 'git.checkout', undefined, rootPath)
+          break
         case 'sync':
           await runGitSync(provider, rootPath)
           break
@@ -835,6 +839,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             await openChangeDiff(getGitApi, { node: fileNode })
           }
           break
+        case 'openFile':
+          if (fileNode) {
+            await openChangeFile(getGitApi, { node: fileNode })
+          }
+          break
         case 'stage':
           if (section && section !== 'staged' && relativePath) {
             await runStageWithReveal(provider, rootPath, [relativePath], section)
@@ -846,8 +855,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           }
           break
         case 'discard':
-          if (relativePath) {
-            await discardPaths(getGitApi, rootPath, [relativePath])
+        case 'revert':
+          if (section === 'staged' || section === 'changes') {
+            const revertTargets = relativePath
+              ? [relativePath]
+              : pathsInSection(getGitApi, rootPath, section, relativeDir)
+            await revertPaths(getGitApi, rootPath, revertTargets, section)
           }
           break
         case 'stageAll':
@@ -866,8 +879,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           }
           break
         case 'discardAll':
-          if (section === 'changes') {
-            await discardPaths(getGitApi, rootPath, pathsInSection(getGitApi, rootPath, section, relativeDir))
+          if (section === 'changes' || section === 'staged') {
+            await revertPaths(
+              getGitApi,
+              rootPath,
+              pathsInSection(getGitApi, rootPath, section, relativeDir),
+              section
+            )
           }
           break
         default:

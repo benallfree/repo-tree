@@ -224,18 +224,34 @@ export async function discardPaths(
   rootPath: string,
   paths: string[]
 ): Promise<void> {
+  await revertPaths(getGit, rootPath, paths, 'changes')
+}
+
+/** Drop changes for these paths. Staged paths are unstaged first, then the work tree is restored to HEAD. */
+export async function revertPaths(
+  getGit: () => GitApiLite | undefined,
+  rootPath: string,
+  paths: string[],
+  section: ScmSection
+): Promise<void> {
   const repo = findGitRepository(getGit(), rootPath)
   if (!repo || paths.length === 0) {
     return
   }
   const label = paths.length === 1 ? paths[0] : `${paths.length} files`
   const ok = await vscode.window.showWarningMessage(
-    `Discard changes in ${label}?`,
+    `Revert changes in ${label}?`,
     { modal: true },
-    'Discard'
+    'Revert'
   )
-  if (ok !== 'Discard') {
+  if (ok !== 'Revert') {
     return
+  }
+  if (section === 'staged') {
+    const indexed = indexPathsForRelative(repo, paths)
+    if (indexed.length > 0) {
+      await repo.revert(indexed)
+    }
   }
   const toClean = fsPathsToClean(repo, paths)
   if (toClean.length > 0) {
