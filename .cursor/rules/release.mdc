@@ -1,0 +1,42 @@
+---
+description: Cut a semver GitHub release (tag, push, VSIX)
+alwaysApply: false
+---
+
+# Release process
+
+Shipping a version is **`./scripts/release.sh`**, not `gh release create` alone.
+
+## Before release
+
+1. Set **`package.json`** and **`package-lock.json`** to clean semver (`0.3.0`, no `-b` suffix).
+2. Move notes from **`[Unreleased]`** to **`## [X.Y.Z] - YYYY-MM-DD`** in **`CHANGELOG.md`**.
+3. Commit release metadata (`Prepare X.Y.Z release`).
+
+## `./scripts/release.sh`
+
+1. `npm test`
+2. `npx @vscode/vsce package` → `repo-tree-X.Y.Z.vsix`
+3. **`git tag -a vX.Y.Z -m "Release X.Y.Z"`** on `HEAD`
+4. **`git push origin main`** then **`git push origin vX.Y.Z`**
+5. **`gh release create`** with notes from CHANGELOG + attach VSIX
+
+## Verify tags
+
+```bash
+git fetch --tags
+git tag -l 'v*'
+git ls-remote --tags origin | grep vX.Y.Z
+```
+
+Release commit and tag must point at the same revision. Prefer **annotated** tags (`git tag -a`); the script always creates them.
+
+## After release (local dev)
+
+Run **`./scripts/install.sh`** and reload Cursor. Dev builds show **`{semver}-next-bN`** in Extensions until you reset `package.json` to release semver for the next cut.
+
+## Do not
+
+- Publish with only `gh release create` and skip **`git push origin vX.Y.Z`**
+- Leave **`package.json`** on `-next-bN` when running **`release.sh`** (restore from git first)
+- Skip install after pulling a new release while using the dev symlink

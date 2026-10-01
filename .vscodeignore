@@ -1,10 +1,14 @@
 .vscode/**
 src/**
 scripts/**
+.cursor/**
 **/*.map
 **/*.ts
+**/*.test.js
 node_modules/**
 tsconfig.json
 .gitignore
+.build-base
+.build-number
 *.vsix
 .DS_Store

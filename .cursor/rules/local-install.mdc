@@ -21,7 +21,9 @@ Run:
 ./scripts/install.sh
 ```
 
-That compiles, bumps the local `-bN` suffix in `package.json`, and refreshes the Cursor extensions symlink.
+That compiles, bumps **`package.json` version** and the symlink to `{semver}-next-bN` (Extensions **Installation → Version** reads `package.json`), and removes stale `benallfree.repo-tree-*` symlinks.
+
+After pulling a new release, run install again and reload the window (see [release.mdc](release.mdc)).
 
 ## Verify
 

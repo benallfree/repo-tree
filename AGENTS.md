@@ -13,6 +13,10 @@ npm test          # when you changed src/
 
 Reload Cursor to pick up the new build in the host UI.
 
+## Release
+
+Follow [`.cursor/rules/release.mdc`](.cursor/rules/release.mdc). Run **`./scripts/release.sh`** (annotated tag, push tag, VSIX, GitHub release).
+
 ## Layout
 
 | Path | Role |

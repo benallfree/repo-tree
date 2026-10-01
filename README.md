@@ -16,7 +16,7 @@ This extension improves on that default by presenting a **tree** you can navigat
 ./scripts/install.sh
 ```
 
-Reload the window. The script bumps a local build suffix in `package.json` (for example `0.2.1-b64`), then symlinks this repo into `~/.cursor/extensions/benallfree.repo-tree-<version>`. Counters live in gitignored `.build-number` and `.build-base`. Set the semver prefix in `package.json` when you cut a release; the next install starts `-b1` for that base.
+Reload the window. Each install bumps **`package.json`** and the symlink folder to `{semver}-next-bN` (for example `0.3.0-next-b2`). That string is what **Extensions → Installation → Version** shows during dev, so you can tie UI behavior to a specific local build. Counters live in gitignored `.build-number` and `.build-base`. Before a release, restore committed semver in `package.json` (or `git checkout package.json`) and run `./scripts/release.sh` (see `.cursor/rules/release.mdc`).
 
 Hide the built-in **Repositories** section from Source Control → `...` → Views if you only want the tree.
 
