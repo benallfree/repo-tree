@@ -193,6 +193,7 @@ const I = {
   graph: '<svg viewBox="0 0 16 16"><path fill="currentColor" d="M3 12h2V8H3v4zm4 0h2V4H7v8zm4 0h2V6h-2v6z"/></svg>',
   more: '<svg viewBox="0 0 16 16"><circle cx="3" cy="8" r="1.2" fill="currentColor"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/><circle cx="13" cy="8" r="1.2" fill="currentColor"/></svg>',
   add: '<svg viewBox="0 0 16 16"><path fill="currentColor" d="M7.2 2h1.6v5.2H14v1.6H8.8V14H7.2V8.8H2V7.2h5.2V2z"/></svg>',
+  page: '<svg viewBox="0 0 16 16"><path fill="currentColor" d="M6.5 2A1.5 1.5 0 005 3.5V12A1.5 1.5 0 006.5 13.5H11A1.5 1.5 0 0012.5 12V6.621a.5.5 0 00-.146-.354l-4-4A.5.5 0 008.021 2.5H6.5zm0 1h1.792L11.5 6.207V12H6.5V3z"/></svg>',
   revert: '<svg viewBox="0 0 16 16"><path fill="currentColor" d="M8 3a5 5 0 00-4.6 3H5.5L3 8.5 0.5 6h2.1A6.5 6.5 0 118 14.5V13a5 5 0 100-10z"/></svg>',
   remove: '<svg viewBox="0 0 16 16"><path fill="currentColor" d="M3 7.2h10v1.6H3z"/></svg>'
 }
@@ -316,6 +317,7 @@ function row(node, depth, state) {
       letter.textContent = node.letter
       actions.appendChild(letter)
     }
+    actions.appendChild(btn(I.page, 'Open File', () => postAction('openFile', node)))
     if (node.section === 'staged' || node.section === 'changes') {
       actions.appendChild(btn(I.revert, 'Revert', () => postAction('revert', node)))
     }

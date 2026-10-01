@@ -1,6 +1,19 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { CollapsibleCollapsed, CollapsibleExpanded, TreeExpansionSession } from './treeExpansion'
+import {
+  CollapsibleCollapsed,
+  CollapsibleExpanded,
+  scmSectionExpandFallback,
+  TreeExpansionSession,
+} from './treeExpansion'
+
+describe('scmSectionExpandFallback', () => {
+  it('expands Changes and Staged by default', () => {
+    assert.equal(scmSectionExpandFallback('changes'), CollapsibleExpanded)
+    assert.equal(scmSectionExpandFallback('staged'), CollapsibleExpanded)
+    assert.equal(scmSectionExpandFallback('merge'), CollapsibleCollapsed)
+  })
+})
 
 describe('TreeExpansionSession', () => {
   it('remembers expanded and collapsed nodes by id', () => {

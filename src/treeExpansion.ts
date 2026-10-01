@@ -8,6 +8,11 @@ export type CollapsibleState = typeof CollapsibleNone | typeof CollapsibleCollap
 import type { ScmSection } from './scmTree'
 import { scmDirTreeId } from './repoTreeNode'
 
+/** Default expand for SCM section headers until the user collapses them this session. */
+export function scmSectionExpandFallback(section: ScmSection): CollapsibleState {
+  return section === 'changes' || section === 'staged' ? CollapsibleExpanded : CollapsibleCollapsed
+}
+
 /** In-memory expand/collapse for Repository Tree (resets when the window reloads). */
 export class TreeExpansionSession {
   private readonly expandedById = new Map<string, boolean>()
