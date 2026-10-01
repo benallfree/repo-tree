@@ -521,9 +521,19 @@ function selectionKindFromNode(node: RepoTreeNode): string {
   return 'none'
 }
 
-async function syncSelectionContext(tree: vscode.TreeView<RepoTreeItem>): Promise<void> {
-  const kind = tree.selection[0] ? selectionKindFromNode(tree.selection[0].node) : 'none'
+async function syncSelectionContext(
+  tree: vscode.TreeView<RepoTreeItem>,
+  provider: RepositoryTreeProvider
+): Promise<void> {
+  const selected = tree.selection[0]
+  const kind = selected ? selectionKindFromNode(selected.node) : 'none'
   await vscode.commands.executeCommand('setContext', 'repoTree.selectionKind', kind)
+  const rootPath = selected ? nodeRootPath(selected.node) : undefined
+  await vscode.commands.executeCommand(
+    'setContext',
+    'repoTree.repoSyncing',
+    Boolean(rootPath && provider.isSyncingRoot(rootPath))
+  )
 }
 
 function repoHadStagedSection(rootPath: string): boolean {
@@ -588,10 +598,12 @@ async function runGitSync(
     return
   }
   provider.setSyncingRoot(rootPath)
+  void syncSelectionContext(tree, provider)
   try {
     await runGitRepoCommand(getGitApi, 'git.sync', resolved)
   } finally {
     provider.clearSyncingRoot()
+    void syncSelectionContext(tree, provider)
   }
 }
 
@@ -689,6 +701,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const stored = loadViewOptions(context.globalState.get<Partial<ViewOptions>>(STORAGE_KEY))
   await syncViewContext(stored)
   await vscode.commands.executeCommand('setContext', 'repoTree.selectionKind', 'none')
+  await vscode.commands.executeCommand('setContext', 'repoTree.repoSyncing', false)
 
   const provider = new RepositoryTreeProvider(getGitApi)
 
@@ -735,10 +748,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   context.subscriptions.push(
     tree.onDidChangeSelection(() => {
-      void syncSelectionContext(tree)
+      void syncSelectionContext(tree, provider)
     })
   )
-  void syncSelectionContext(tree)
+  void syncSelectionContext(tree, provider)
 
   const repoRootFromTreeNode = (node: RepoTreeNode): string | undefined => {
     if (node.kind === 'repo') {
@@ -878,6 +891,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('repoTree.gitSyncBusy', () => {
       // Spinning affordance only; sync runs via repoTree.gitSync.
     }),
+    vscode.commands.registerCommand('repoTree.gitRefresh', (item?: RepoTreeItem) =>
+      runGitRepoCommand(getGitApi, 'git.refresh', item)
+    ),
     vscode.commands.registerCommand('repoTree.gitPull', (item?: RepoTreeItem) =>
       runGitRepoCommand(getGitApi, 'git.pull', item)
     ),

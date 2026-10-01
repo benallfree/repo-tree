@@ -24,13 +24,15 @@ Hide the built-in **Repositories** section from Source Control → `...` → Vie
 
 ### View toolbar
 
-| Control | Action |
-| --- | --- |
-| Tree / flat | Toggle nested folders vs a single sorted list |
-| Sort | Name, or recent WIP (last dirty activity in this window) |
-| Filter | Hide clean repos; tree mode keeps parent folders |
+Toolbar layout follows the built-in **Changes** view: view options first, then repo git actions, then change actions.
 
-Row action icons (stage, discard, commit, and similar) appear when you **hover or select** that row. The built-in **Changes** list uses a different control that keeps icons on every row; VS Code does not expose that for custom tree views. With a repo, section, folder, or changed file **selected**, the same actions also show in the **Repository Tree** panel toolbar above the list. Right-click any change row for the full context menu.
+| Group | Controls |
+| --- | --- |
+| View (`navigation`) | Tree / flat, sort, filter, refresh tree |
+| Repo (repo selected) | Sync, commit, refresh, then **…** (pull, push, reveal, open in window) |
+| Changes (`2_git`, file/section selected) | Stage / unstage, discard, open diff, open file |
+
+On a **repo row** (hover or select), inline icons match **Changes**: sync, commit, refresh, graph (if Git Graph / GitLens is installed), **…** for pull/push and folder actions. Pull and push are not separate row icons. With a row **selected**, the same repo actions also appear in the panel title bar. Right-click any row for the full context menu.
 
 ### Dirty repos
 

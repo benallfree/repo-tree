@@ -88,6 +88,11 @@
         "icon": "$(sync~spin)"
       },
       {
+        "command": "repoTree.gitRefresh",
+        "title": "Refresh",
+        "icon": "$(refresh)"
+      },
+      {
         "command": "repoTree.gitPull",
         "title": "Pull",
         "icon": "$(arrow-down)"
@@ -189,106 +194,116 @@
           "group": "navigation@4"
         },
         {
+          "command": "repoTree.gitSyncBusy",
+          "when": "view == repoTree.repositories && repoTree.selectionKind == repo && repoTree.repoSyncing && config.git.enabled && !git.missing",
+          "group": "navigation@10"
+        },
+        {
+          "command": "repoTree.gitSync",
+          "when": "view == repoTree.repositories && repoTree.selectionKind == repo && !repoTree.repoSyncing && config.git.enabled && !git.missing",
+          "group": "navigation@10"
+        },
+        {
           "command": "repoTree.commit",
           "when": "view == repoTree.repositories && repoTree.selectionKind == repo && config.git.enabled && !git.missing",
-          "group": "navigation@5"
+          "group": "navigation@11"
+        },
+        {
+          "command": "repoTree.gitRefresh",
+          "when": "view == repoTree.repositories && repoTree.selectionKind == repo && config.git.enabled && !git.missing",
+          "group": "navigation@12"
+        },
+        {
+          "submenu": "repoTree.repoMore",
+          "when": "view == repoTree.repositories && repoTree.selectionKind == repo",
+          "group": "navigation@13"
         },
         {
           "command": "repoTree.stageFile",
           "when": "view == repoTree.repositories && repoTree.selectionKind == file.changes && config.git.enabled && !git.missing",
-          "group": "navigation@6"
-        },
-        {
-          "command": "repoTree.discardFile",
-          "when": "view == repoTree.repositories && repoTree.selectionKind == file.changes && config.git.enabled && !git.missing",
-          "group": "navigation@7"
+          "group": "2_git@1"
         },
         {
           "command": "repoTree.stageFile",
           "when": "view == repoTree.repositories && repoTree.selectionKind == file.merge && config.git.enabled && !git.missing",
-          "group": "navigation@6"
+          "group": "2_git@1"
         },
         {
           "command": "repoTree.unstageFile",
           "when": "view == repoTree.repositories && repoTree.selectionKind == file.staged && config.git.enabled && !git.missing",
-          "group": "navigation@6"
+          "group": "2_git@1"
         },
         {
           "command": "repoTree.stageAllInScope",
           "when": "view == repoTree.repositories && (repoTree.selectionKind == section.changes || repoTree.selectionKind == dir.changes) && config.git.enabled && !git.missing",
-          "group": "navigation@6"
-        },
-        {
-          "command": "repoTree.discardAllInScope",
-          "when": "view == repoTree.repositories && (repoTree.selectionKind == section.changes || repoTree.selectionKind == dir.changes) && config.git.enabled && !git.missing",
-          "group": "navigation@7"
+          "group": "2_git@1"
         },
         {
           "command": "repoTree.stageAllInScope",
           "when": "view == repoTree.repositories && (repoTree.selectionKind == section.merge || repoTree.selectionKind == dir.merge) && config.git.enabled && !git.missing",
-          "group": "navigation@6"
+          "group": "2_git@1"
         },
         {
           "command": "repoTree.unstageAllInScope",
           "when": "view == repoTree.repositories && (repoTree.selectionKind == section.staged || repoTree.selectionKind == dir.staged) && config.git.enabled && !git.missing",
-          "group": "navigation@6"
+          "group": "2_git@1"
+        },
+        {
+          "command": "repoTree.discardFile",
+          "when": "view == repoTree.repositories && repoTree.selectionKind == file.changes && config.git.enabled && !git.missing",
+          "group": "2_git@2"
+        },
+        {
+          "command": "repoTree.discardAllInScope",
+          "when": "view == repoTree.repositories && (repoTree.selectionKind == section.changes || repoTree.selectionKind == dir.changes) && config.git.enabled && !git.missing",
+          "group": "2_git@2"
         },
         {
           "command": "repoTree.openDiff",
           "when": "view == repoTree.repositories && repoTree.selectionKind =~ /^file\\./",
-          "group": "navigation@8"
+          "group": "2_git@3"
         },
         {
           "command": "repoTree.openFile",
           "when": "view == repoTree.repositories && repoTree.selectionKind =~ /^file\\./ && config.git.enabled && !git.missing",
-          "group": "navigation@9"
+          "group": "2_git@4"
         }
       ],
       "view/item/context": [
         {
-          "command": "repoTree.viewGitGraph",
-          "when": "view == repoTree.repositories && viewItem == repoTree.repo && repoTree.gitGraph",
-          "group": "inline@0"
-        },
-        {
-          "command": "repoTree.viewCommitGraph",
-          "when": "view == repoTree.repositories && viewItem == repoTree.repo && repoTree.gitLens",
-          "group": "inline@0"
-        },
-        {
-          "command": "repoTree.commit",
-          "when": "view == repoTree.repositories && viewItem == repoTree.repo && config.git.enabled && !git.missing",
+          "command": "repoTree.gitSyncBusy",
+          "when": "view == repoTree.repositories && viewItem == repoTree.repo.syncing && config.git.enabled && !git.missing",
           "group": "inline@1"
         },
         {
           "command": "repoTree.gitSync",
           "when": "view == repoTree.repositories && viewItem == repoTree.repo && config.git.enabled && !git.missing",
+          "group": "inline@1"
+        },
+        {
+          "command": "repoTree.commit",
+          "when": "view == repoTree.repositories && viewItem == repoTree.repo && config.git.enabled && !git.missing",
           "group": "inline@2"
         },
         {
-          "command": "repoTree.gitSyncBusy",
-          "when": "view == repoTree.repositories && viewItem == repoTree.repo.syncing && config.git.enabled && !git.missing",
-          "group": "inline@2"
-        },
-        {
-          "command": "repoTree.gitPull",
+          "command": "repoTree.gitRefresh",
           "when": "view == repoTree.repositories && viewItem == repoTree.repo && config.git.enabled && !git.missing",
           "group": "inline@3"
         },
         {
-          "command": "repoTree.gitPush",
-          "when": "view == repoTree.repositories && viewItem == repoTree.repo && config.git.enabled && !git.missing",
+          "command": "repoTree.viewGitGraph",
+          "when": "view == repoTree.repositories && viewItem == repoTree.repo && repoTree.gitGraph",
           "group": "inline@4"
         },
         {
-          "command": "repoTree.revealInExplorer",
-          "when": "view == repoTree.repositories && viewItem == repoTree.repo",
-          "group": "navigation@1"
+          "command": "repoTree.viewCommitGraph",
+          "when": "view == repoTree.repositories && viewItem == repoTree.repo && repoTree.gitLens",
+          "group": "inline@4"
         },
         {
-          "command": "repoTree.openInNewWindow",
+          "submenu": "repoTree.repoMore",
           "when": "view == repoTree.repositories && viewItem == repoTree.repo",
-          "group": "navigation@2"
+          "group": "inline@5"
         },
         {
           "command": "repoTree.unstageAllInScope",
@@ -435,8 +450,35 @@
           "when": "view == repoTree.repositories && viewItem == repoTree.scmChangeDir.changes",
           "group": "navigation@3"
         }
+      ],
+      "repoTree.repoMore": [
+        {
+          "command": "repoTree.gitPull",
+          "when": "config.git.enabled && !git.missing",
+          "group": "1_pullpush@1"
+        },
+        {
+          "command": "repoTree.gitPush",
+          "when": "config.git.enabled && !git.missing",
+          "group": "1_pullpush@2"
+        },
+        {
+          "command": "repoTree.revealInExplorer",
+          "group": "2_view@1"
+        },
+        {
+          "command": "repoTree.openInNewWindow",
+          "group": "2_view@2"
+        }
       ]
-    }
+    },
+    "submenus": [
+      {
+        "id": "repoTree.repoMore",
+        "label": "Repository Actions",
+        "icon": "$(ellipsis)"
+      }
+    ]
   },
   "scripts": {
     "compile": "tsc -p ./",
