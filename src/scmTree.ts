@@ -109,13 +109,17 @@ export function mergeRepoChanges(
   repoRoot: string,
   indexChanges: readonly GitChangeLike[],
   workingTreeChanges: readonly GitChangeLike[],
-  mergeChanges: readonly GitChangeLike[]
+  mergeChanges: readonly GitChangeLike[],
+  untrackedChanges: readonly GitChangeLike[] = []
 ): MergedChangeFile[] {
   const map = new Map<string, Set<FileChangeState>>()
   for (const c of indexChanges) {
     addState(map, relativeRepoPath(repoRoot, c.uri.fsPath), 'staged')
   }
   for (const c of workingTreeChanges) {
+    addState(map, relativeRepoPath(repoRoot, c.uri.fsPath), 'changes')
+  }
+  for (const c of untrackedChanges) {
     addState(map, relativeRepoPath(repoRoot, c.uri.fsPath), 'changes')
   }
   for (const c of mergeChanges) {

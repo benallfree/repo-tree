@@ -9,16 +9,20 @@ import {
   type MergedChangeFile,
   type ScmSection,
 } from './scmTree'
+import type { GitStatusValue } from './gitStatus'
 
 export interface GitChange {
   uri: vscode.Uri
   originalUri?: vscode.Uri
+  renameUri?: vscode.Uri
+  status?: GitStatusValue
 }
 
 export interface GitRepositoryState {
   indexChanges: readonly GitChange[]
   workingTreeChanges: readonly GitChange[]
   mergeChanges: readonly GitChange[]
+  untrackedChanges?: readonly GitChange[]
 }
 
 export interface GitScmResource {
@@ -120,6 +124,27 @@ export function findScmResourceForFile(
   return findScmResource(repo, relativePath, section)
 }
 
+export function findChangeForSection(
+  repo: GitRepositoryRef,
+  relativePath: string,
+  section: ScmSection
+): GitChange | undefined {
+  const root = repo.rootUri.fsPath
+  const want = relativePath.split('/').join('/')
+  const match = (c: GitChange) => relativeRepoPath(root, c.uri.fsPath) === want
+
+  if (section === 'staged') {
+    return repo.state.indexChanges.find(match)
+  }
+  if (section === 'merge') {
+    return repo.state.mergeChanges.find(match)
+  }
+  return (
+    repo.state.workingTreeChanges.find(match) ??
+    repo.state.untrackedChanges?.find(match)
+  )
+}
+
 export async function runGitRepoCommand(
   getGit: () => GitApiLite | undefined,
   gitCommand: string,
@@ -188,7 +213,8 @@ function mergedForRepo(git: GitApiLite | undefined, rootPath: string): MergedCha
     repo.rootUri.fsPath,
     repo.state.indexChanges,
     repo.state.workingTreeChanges,
-    repo.state.mergeChanges
+    repo.state.mergeChanges,
+    repo.state.untrackedChanges ?? []
   )
 }
 

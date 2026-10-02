@@ -484,7 +484,7 @@
   "scripts": {
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "test": "npm run compile && node --test out/tree.test.js out/scmTree.test.js out/gitignore.test.js out/treeExpansion.test.js",
+    "test": "npm run compile && node --test out/tree.test.js out/scmTree.test.js out/gitignore.test.js out/treeExpansion.test.js out/gitStatus.test.js",
     "vscode:prepublish": "npm run compile"
   },
   "devDependencies": {

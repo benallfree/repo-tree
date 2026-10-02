@@ -4,6 +4,7 @@ import {
   commitRepository,
   discardPaths,
   revertPaths,
+  findChangeForSection,
   findGitRepository,
   findScmResourceForFile,
   openChangeDiff,
@@ -44,13 +45,23 @@ import {
 } from './tree'
 import { RepoWebviewViewProvider, type RepoSnap, type RepoViewMessage } from './repoWebview'
 import { scmSectionExpandFallback, TreeExpansionSession } from './treeExpansion'
+import { formatStatusBadge, statusCssClass, type GitStatusValue } from './gitStatus'
 import { defaultViewOptions, loadViewOptions, type ViewOptions } from './viewState'
+
+interface GitDiffChange {
+  uri: vscode.Uri
+  status: GitStatusValue
+  insertions?: number
+  deletions?: number
+}
 
 type GitRepository = GitRepositoryRef & {
   state: GitRepositoryRef['state'] & {
     HEAD?: { name?: string; commit?: string; ahead?: number; behind?: number }
     onDidChange: vscode.Event<void>
   }
+  diffBetweenWithStats2?(ref: string, path?: string): Promise<GitDiffChange[]>
+  diffIndexWithHEADShortStats?(path?: string): Promise<{ insertions: number; deletions: number }>
 }
 
 interface GitApi {
@@ -122,6 +133,9 @@ class RepositoryTreeProvider implements vscode.TreeDataProvider<RepoTreeItem> {
   private readonly wipActivity = new Map<string, number>()
   readonly expansion = new TreeExpansionSession()
   private syncingRootPath?: string
+  /** `${rootPath}:${relativePath}` → diff stats for Changes-section badges */
+  private readonly workingTreeStats = new Map<string, { insertions: number; deletions: number }>()
+  private statsRefreshRoots = new Set<string>()
 
   constructor(private readonly getGit: () => GitApi | undefined) {}
 
@@ -218,10 +232,56 @@ class RepositoryTreeProvider implements vscode.TreeDataProvider<RepoTreeItem> {
     this.disposables.push(
       repo.state.onDidChange(() => {
         this.touchWipActivity(repo)
+        this.scheduleWorkingTreeStats(repo.rootUri.fsPath)
         this.refresh()
       })
     )
     this.touchWipActivity(repo)
+    this.scheduleWorkingTreeStats(repo.rootUri.fsPath)
+  }
+
+  private scheduleWorkingTreeStats(rootPath: string): void {
+    if (this.statsRefreshRoots.has(rootPath)) {
+      return
+    }
+    this.statsRefreshRoots.add(rootPath)
+    void this.refreshWorkingTreeStats(rootPath).finally(() => {
+      this.statsRefreshRoots.delete(rootPath)
+    })
+  }
+
+  private async refreshWorkingTreeStats(rootPath: string): Promise<void> {
+    const git = this.git ?? this.getGit()
+    const repo = git?.repositories.find((r) => r.rootUri.fsPath === rootPath) as GitRepository | undefined
+    if (!repo?.diffBetweenWithStats2) {
+      return
+    }
+    try {
+      const changes = await repo.diffBetweenWithStats2('HEAD')
+      const prefix = `${rootPath}:`
+      for (const key of this.workingTreeStats.keys()) {
+        if (key.startsWith(prefix)) {
+          this.workingTreeStats.delete(key)
+        }
+      }
+      for (const c of changes) {
+        const rel = path.relative(rootPath, c.uri.fsPath).split(path.sep).join('/')
+        if (!rel || rel.startsWith('..')) {
+          continue
+        }
+        this.workingTreeStats.set(`${rootPath}:${rel}`, {
+          insertions: c.insertions ?? 0,
+          deletions: c.deletions ?? 0,
+        })
+      }
+      this.refresh()
+    } catch {
+      // diff stats are optional decoration
+    }
+  }
+
+  private statsForFile(rootPath: string, relativePath: string): { insertions: number; deletions: number } | undefined {
+    return this.workingTreeStats.get(`${rootPath}:${relativePath}`)
   }
 
   private touchWipActivity(repo: GitRepository): void {
@@ -291,15 +351,18 @@ class RepositoryTreeProvider implements vscode.TreeDataProvider<RepoTreeItem> {
     const fileUri = vscode.Uri.file(path.join(node.rootPath, node.relativePath))
     item.resourceUri = fileUri
 
-    const resource = repo ? findScmResourceForFile(repo, node.relativePath, node.section) : undefined
-    if (!resource) {
-      return
-    }
-    if (resource.letter) {
-      item.description = resource.letter
-    }
-    if (resource.tooltip) {
-      item.tooltip = resource.tooltip
+    const change = repo ? findChangeForSection(repo, node.relativePath, node.section) : undefined
+    if (change?.status !== undefined) {
+      const stats = node.section === 'changes' ? this.statsForFile(node.rootPath, node.relativePath) : undefined
+      item.description = formatStatusBadge(change.status, stats?.insertions, stats?.deletions)
+    } else {
+      const resource = repo ? findScmResourceForFile(repo, node.relativePath, node.section) : undefined
+      if (resource?.letter) {
+        item.description = resource.letter
+      }
+      if (resource?.tooltip) {
+        item.tooltip = resource.tooltip
+      }
     }
   }
 
@@ -386,7 +449,8 @@ class RepositoryTreeProvider implements vscode.TreeDataProvider<RepoTreeItem> {
       repo.rootUri.fsPath,
       repo.state.indexChanges,
       repo.state.workingTreeChanges,
-      repo.state.mergeChanges
+      repo.state.mergeChanges,
+      repo.state.untrackedChanges ?? []
     )
   }
 
@@ -541,8 +605,16 @@ class RepositoryTreeProvider implements vscode.TreeDataProvider<RepoTreeItem> {
       snap.relativePath = node.relativePath
       const git = this.git ?? this.getGit()
       const repo = git ? findGitRepository(git, node.rootPath) : undefined
-      const resource = repo ? findScmResourceForFile(repo, node.relativePath, node.section) : undefined
-      snap.letter = resource?.letter
+      const change = repo ? findChangeForSection(repo, node.relativePath, node.section) : undefined
+      if (change?.status !== undefined) {
+        const stats =
+          node.section === 'changes' ? this.statsForFile(node.rootPath, node.relativePath) : undefined
+        snap.letter = formatStatusBadge(change.status, stats?.insertions, stats?.deletions)
+        snap.statusClass = statusCssClass(change.status)
+      } else {
+        const resource = repo ? findScmResourceForFile(repo, node.relativePath, node.section) : undefined
+        snap.letter = resource?.letter
+      }
       snap.dirty = true
     }
     if (rootPath && (node.kind === 'repo' || node.kind === 'folder')) {
@@ -627,7 +699,8 @@ function repoHadStagedSection(rootPath: string): boolean {
       repo.rootUri.fsPath,
       repo.state.indexChanges,
       repo.state.workingTreeChanges,
-      repo.state.mergeChanges
+      repo.state.mergeChanges,
+      repo.state.untrackedChanges ?? []
     ),
     'staged'
   )

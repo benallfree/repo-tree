@@ -18,6 +18,7 @@ export interface RepoSnap {
   behind?: number
   syncing?: boolean
   letter?: string
+  statusClass?: string
   children: RepoSnap[]
 }
 
@@ -99,6 +100,13 @@ function html(): string {
     white-space: nowrap;
   }
   .name.dirty { color: var(--vscode-gitDecoration-modifiedResourceForeground); }
+  .name.status-modified { color: var(--vscode-gitDecoration-modifiedResourceForeground); }
+  .name.status-untracked { color: var(--vscode-gitDecoration-untrackedResourceForeground); }
+  .name.status-added { color: var(--vscode-gitDecoration-addedResourceForeground); }
+  .name.status-deleted { color: var(--vscode-gitDecoration-deletedResourceForeground); }
+  .name.status-renamed { color: var(--vscode-gitDecoration-renamedResourceForeground); }
+  .name.status-ignored { color: var(--vscode-gitDecoration-ignoredResourceForeground); }
+  .name.status-conflict { color: var(--vscode-gitDecoration-conflictingResourceForeground); }
   .name.clickable, .main.clickable { cursor: pointer; }
   .actions {
     display: flex;
@@ -142,11 +150,20 @@ function html(): string {
   button.chevron { color: var(--vscode-foreground); opacity: 0.8; }
   button.chevron.empty { visibility: hidden; }
   .letter {
-    width: 16px;
-    text-align: center;
-    opacity: 0.7;
+    min-width: 28px;
+    text-align: right;
+    opacity: 0.85;
     font-size: 11px;
+    white-space: nowrap;
+    margin-right: 2px;
   }
+  .letter.status-modified { color: var(--vscode-gitDecoration-modifiedResourceForeground); }
+  .letter.status-untracked { color: var(--vscode-gitDecoration-untrackedResourceForeground); }
+  .letter.status-added { color: var(--vscode-gitDecoration-addedResourceForeground); }
+  .letter.status-deleted { color: var(--vscode-gitDecoration-deletedResourceForeground); }
+  .letter.status-renamed { color: var(--vscode-gitDecoration-renamedResourceForeground); }
+  .letter.status-ignored { color: var(--vscode-gitDecoration-ignoredResourceForeground); }
+  .letter.status-conflict { color: var(--vscode-gitDecoration-conflictingResourceForeground); }
   .menu {
     position: fixed;
     z-index: 5;
@@ -264,7 +281,13 @@ function row(node, depth, state) {
   glyph.innerHTML = isRepo ? I.repo : (node.kind === 'folder' || node.kind === 'dir' || node.kind === 'section' ? I.folder : '')
   if (node.kind !== 'file') main.appendChild(glyph)
   const name = document.createElement('span')
-  name.className = 'name' + (node.dirty ? ' dirty' : '')
+  let nameClass = 'name'
+  if (node.kind === 'file' && node.statusClass) {
+    nameClass += ' ' + node.statusClass
+  } else if (node.dirty) {
+    nameClass += ' dirty'
+  }
+  name.className = nameClass
   name.textContent = node.name
   main.appendChild(name)
   if (node.kind === 'file') {
@@ -312,8 +335,9 @@ function row(node, depth, state) {
   } else if (node.kind === 'file') {
     if (node.letter) {
       const letter = document.createElement('span')
-      letter.className = 'letter'
+      letter.className = 'letter' + (node.statusClass ? ' ' + node.statusClass : '')
       letter.textContent = node.letter
+      letter.title = node.letter
       actions.appendChild(letter)
     }
     actions.appendChild(btn(I.page, 'Open File', () => postAction('openFile', node)))
