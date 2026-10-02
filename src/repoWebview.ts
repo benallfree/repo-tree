@@ -270,8 +270,7 @@ function row(node, depth, state) {
   if (node.kind === 'file') {
     main.classList.add('clickable')
     main.addEventListener('click', () => postAction('openDiff', node))
-  }
-  if (node.hasChildren && (node.kind === 'folder' || node.kind === 'dir' || node.kind === 'section')) {
+  } else if (node.hasChildren) {
     main.classList.add('clickable')
     main.addEventListener('click', () => {
       vscode.postMessage({ type: 'toggle', id: node.id })
