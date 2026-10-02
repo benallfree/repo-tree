@@ -6,9 +6,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-02
+
+### Added
+
+- **Custom Repository Tree webview** with always-visible repo actions (branch, ahead/behind, sync, commit, refresh, graph, more).
+- **Branch chip** opens checkout quick pick; **repo row click** expands or collapses children.
+- File rows: click name for **diff**, **Open File** icon for the editor, **Stage** / **Unstage** / **Revert**, plus **M / U / D** badges and line counts like stock **Changes**.
+- **Changes** and **Staged Changes** sections expand by default each window until you collapse them.
+
 ### Changed
 
-- Repository Tree is a custom view. Repo rows show branch, ahead/behind counts, sync, commit, refresh, and more actions in a fixed cluster.
+- Top-level tree follows **workspace folders** (multi-root `.code-workspace`), not a shared filesystem prefix.
+- Repos that contain submodules render as **repo rows** with full toolbar actions, not plain folders.
+- **Revert** replaces discard-only flows (unstage staged paths, then restore working tree to HEAD).
 
 ## [0.3.0] - 2026-10-01
 
