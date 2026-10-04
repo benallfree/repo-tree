@@ -13,6 +13,11 @@ export function scmSectionExpandFallback(section: ScmSection): CollapsibleState 
   return section === 'changes' || section === 'staged' ? CollapsibleExpanded : CollapsibleCollapsed
 }
 
+/** Default expand for path folders under a section until the user collapses them this session. */
+export function scmChangeDirExpandFallback(): CollapsibleState {
+  return CollapsibleExpanded
+}
+
 /** In-memory expand/collapse for Repository Tree (resets when the window reloads). */
 export class TreeExpansionSession {
   private readonly expandedById = new Map<string, boolean>()

@@ -44,7 +44,11 @@ import {
   type TreeNode,
 } from './tree'
 import { RepoWebviewViewProvider, type RepoSnap, type RepoViewMessage } from './repoWebview'
-import { scmSectionExpandFallback, TreeExpansionSession } from './treeExpansion'
+import {
+  scmChangeDirExpandFallback,
+  scmSectionExpandFallback,
+  TreeExpansionSession,
+} from './treeExpansion'
 import { formatStatusBadge, statusCssClass, type GitStatusValue } from './gitStatus'
 import { defaultViewOptions, loadViewOptions, type ViewOptions } from './viewState'
 
@@ -525,7 +529,7 @@ class RepositoryTreeProvider implements vscode.TreeDataProvider<RepoTreeItem> {
     return new RepoTreeItem(
       treeNode,
       treeId,
-      this.expansion.collapsibleState(treeId, hasChildren)
+      this.expansion.collapsibleState(treeId, hasChildren, scmChangeDirExpandFallback())
     )
   }
 

@@ -3,6 +3,7 @@ import { describe, it } from 'node:test'
 import {
   CollapsibleCollapsed,
   CollapsibleExpanded,
+  scmChangeDirExpandFallback,
   scmSectionExpandFallback,
   TreeExpansionSession,
 } from './treeExpansion'
@@ -12,6 +13,12 @@ describe('scmSectionExpandFallback', () => {
     assert.equal(scmSectionExpandFallback('changes'), CollapsibleExpanded)
     assert.equal(scmSectionExpandFallback('staged'), CollapsibleExpanded)
     assert.equal(scmSectionExpandFallback('merge'), CollapsibleCollapsed)
+  })
+})
+
+describe('scmChangeDirExpandFallback', () => {
+  it('expands path folders by default', () => {
+    assert.equal(scmChangeDirExpandFallback(), CollapsibleExpanded)
   })
 })
 
@@ -39,5 +46,13 @@ describe('TreeExpansionSession', () => {
     assert.equal(session.collapsibleState('/repo:staged:dir:samples', true), CollapsibleExpanded)
     assert.equal(session.collapsibleState('/repo:staged:dir:other', true), CollapsibleCollapsed)
     assert.equal(session.collapsibleState('/repo:staged:dir:missing', true), CollapsibleCollapsed)
+  })
+
+  it('expands unrecorded change dirs with dir fallback; remembers collapse', () => {
+    const session = new TreeExpansionSession()
+    const fallback = scmChangeDirExpandFallback()
+    assert.equal(session.collapsibleState('/repo:changes:dir:new', true, fallback), CollapsibleExpanded)
+    session.recordExpanded('/repo:changes:dir:closed', false)
+    assert.equal(session.collapsibleState('/repo:changes:dir:closed', true, fallback), CollapsibleCollapsed)
   })
 })

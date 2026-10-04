@@ -6,6 +6,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Path folders under **Changes** / **Staged** that appear after you already opened the repo start expanded until you collapse them (same session behavior as section headers).
+
 ## [0.4.0] - 2026-10-02
 
 ### Added
