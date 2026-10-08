@@ -2,7 +2,7 @@
   "name": "repo-tree",
   "displayName": "Repository Tree",
   "description": "Nested tree of git repositories in the Source Control sidebar",
-  "version": "0.4.1",
+  "version": "0.4.1-next-b1",
   "publisher": "benallfree",
   "repository": {
     "type": "git",
