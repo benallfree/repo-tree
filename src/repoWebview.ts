@@ -42,6 +42,7 @@ export type RepoViewMessage =
 
 export class RepoWebviewViewProvider implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView
+  private lastStamp = ''
 
   constructor(
     private readonly getState: () => RepoViewState,
@@ -50,6 +51,7 @@ export class RepoWebviewViewProvider implements vscode.WebviewViewProvider {
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
     this.view = webviewView
+    this.lastStamp = ''
     webviewView.webview.options = { enableScripts: true }
     webviewView.webview.onDidReceiveMessage((message: RepoViewMessage) => {
       void this.handle(message)
@@ -59,8 +61,54 @@ export class RepoWebviewViewProvider implements vscode.WebviewViewProvider {
   }
 
   postState(): void {
-    this.view?.webview.postMessage({ type: 'state', state: this.getState() })
+    if (!this.view) {
+      return
+    }
+    const state = this.getState()
+    const stamp = viewStateStamp(state)
+    if (stamp === this.lastStamp) {
+      return
+    }
+    this.lastStamp = stamp
+    void this.view.webview.postMessage({ type: 'state', state })
   }
+}
+
+/** Skip posting an identical tree. Two hashes so a single 32-bit collision does not hide an update. */
+export function viewStateStamp(state: RepoViewState): string {
+  let h1 = 2166136261
+  let h2 = 2166136261 ^ 0x9e3779b9
+  const mix = (h: number, s: string): number => {
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i)
+      h = Math.imul(h, 16777619)
+    }
+    return h
+  }
+  const walk = (nodes: RepoSnap[]): void => {
+    for (const n of nodes) {
+      h1 = mix(h1, n.id)
+      h1 = mix(h1, n.name)
+      h1 ^= n.expanded ? 1 : 2
+      h1 = Math.imul(h1, 16777619)
+      if (n.letter) h1 = mix(h1, n.letter)
+      if (n.statusClass) h1 = mix(h1, n.statusClass)
+      if (n.branch) h2 = mix(h2, n.branch)
+      h2 ^= (n.ahead ?? 0) + ((n.behind ?? 0) << 8)
+      h2 ^= n.syncing ? 0x100000 : 0
+      h2 ^= n.dirty ? 4 : 8
+      h2 ^= n.hasChildren ? 16 : 32
+      if (n.expanded && n.children.length) walk(n.children)
+    }
+  }
+  walk(state.nodes)
+  h2 = mix(h2, state.options.layout)
+  h2 = mix(h2, state.options.sortMode)
+  h2 ^= state.options.hideUnchanged ? 1 : 2
+  h2 ^= state.gitGraph ? 4 : 8
+  h2 ^= state.gitLens ? 16 : 32
+  h2 ^= state.nodes.length
+  return `${h1 >>> 0}:${h2 >>> 0}`
 }
 
 function html(): string {
@@ -71,17 +119,36 @@ function html(): string {
 <meta charset="UTF-8" />
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';" />
 <style>
+  html, body {
+    height: 100%;
+    overflow: hidden;
+  }
   body {
     margin: 0;
-    padding: 0 0 8px;
+    padding: 0;
     color: var(--vscode-foreground);
     font-family: var(--vscode-font-family);
     font-size: var(--vscode-font-size);
     background: transparent;
   }
+  #scroll {
+    height: 100%;
+    overflow: auto;
+    overflow-anchor: none;
+    box-sizing: border-box;
+    padding: 0 0 8px;
+  }
+  .spacer {
+    position: relative;
+    width: 100%;
+  }
   .row {
     display: flex;
     align-items: center;
+    position: absolute;
+    left: 0;
+    right: 0;
+    box-sizing: border-box;
     height: 22px;
     padding-right: 6px;
     gap: 2px;
@@ -196,7 +263,7 @@ function html(): string {
 </style>
 </head>
 <body>
-<div id="root"></div>
+<div id="scroll"><div id="root"></div></div>
 <script nonce="${nonce}">
 const vscode = acquireVsCodeApi()
 const I = {
@@ -242,25 +309,83 @@ function counts(node) {
   return behind + '↓ ' + ahead + '↑'
 }
 
-function render(state) {
+const ROW = 22
+const OVERSCAN = 16
+let current = null
+let flat = []
+let lastStart = -1
+let lastEnd = -1
+let lastCount = -1
+let paintQueued = false
+let paintForce = false
+
+function flatten(nodes, depth, out) {
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i]
+    out.push({ node: node, depth: depth })
+    if (node.expanded && node.children && node.children.length) {
+      flatten(node.children, depth + 1, out)
+    }
+  }
+}
+
+function paint(force) {
   const root = document.getElementById('root')
-  const scroll = document.scrollingElement ? document.scrollingElement.scrollTop : 0
-  root.textContent = ''
-  if (!state.nodes.length) {
+  if (!root || !current) return
+  const scroller = document.getElementById('scroll')
+  const scroll = scroller ? scroller.scrollTop : 0
+  if (!current.nodes.length) {
+    lastStart = -1
+    lastEnd = -1
+    lastCount = -1
+    closeMenu()
+    root.textContent = ''
     const p = document.createElement('div')
     p.className = 'empty'
     p.textContent = 'No repositories in this workspace.'
     root.appendChild(p)
     return
   }
-  const walk = (nodes, depth) => {
-    for (const node of nodes) {
-      root.appendChild(row(node, depth, state))
-      if (node.expanded && node.children.length) walk(node.children, depth + 1)
-    }
+  const total = flat.length
+  const viewH = (scroller && scroller.clientHeight) || window.innerHeight || 660
+  const start = Math.max(0, Math.floor(scroll / ROW) - OVERSCAN)
+  const end = Math.min(total, Math.ceil((scroll + viewH) / ROW) + OVERSCAN)
+  if (!force && start === lastStart && end === lastEnd && total === lastCount) return
+  lastStart = start
+  lastEnd = end
+  lastCount = total
+  closeMenu()
+  const spacer = document.createElement('div')
+  spacer.className = 'spacer'
+  spacer.style.height = (total * ROW) + 'px'
+  for (let i = start; i < end; i++) {
+    const entry = flat[i]
+    const el = row(entry.node, entry.depth, current)
+    el.style.top = (i * ROW) + 'px'
+    spacer.appendChild(el)
   }
-  walk(state.nodes, 0)
-  if (document.scrollingElement) document.scrollingElement.scrollTop = scroll
+  root.replaceChildren(spacer)
+  if (scroller && scroller.scrollTop !== scroll) scroller.scrollTop = scroll
+}
+
+function schedulePaint(force) {
+  if (force) paintForce = true
+  if (paintQueued) return
+  paintQueued = true
+  requestAnimationFrame(function () {
+    paintQueued = false
+    const forceNow = paintForce
+    paintForce = false
+    paint(forceNow)
+  })
+}
+
+function setState(state) {
+  current = state
+  flat = []
+  if (state.nodes && state.nodes.length) flatten(state.nodes, 0, flat)
+  paint(true)
+  schedulePaint(true)
 }
 
 function row(node, depth, state) {
@@ -401,8 +526,10 @@ function openMenu(event, node) {
 }
 
 window.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'state') render(event.data.state)
+  if (event.data && event.data.type === 'state') setState(event.data.state)
 })
+document.getElementById('scroll').addEventListener('scroll', () => schedulePaint(false))
+window.addEventListener('resize', () => schedulePaint(true))
 vscode.postMessage({ type: 'ready' })
 </script>
 </body>

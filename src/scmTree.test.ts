@@ -2,8 +2,12 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
   filesForSection,
+  indexSectionChanges,
   mergeRepoChanges,
   nestChangePaths,
+  nestedDirChildren,
+  pathListSignature,
+  type MergedChangeFile,
   pathsInSectionUnderDir,
   pathsUnderDir,
   primaryScmSection,
@@ -127,5 +131,63 @@ describe('nestChangePaths', () => {
     )
     assert.equal(nested.length, 1)
     assert.equal(nested[0].kind, 'file')
+  })
+
+  it('nests thousands of sibling files under one directory', () => {
+    const files: MergedChangeFile[] = Array.from({ length: 5000 }, (_, i) => ({
+      relativePath: `links/3200peak/peak-${i}.json`,
+      name: `peak-${i}.json`,
+      states: ['changes'],
+    }))
+    const started = Date.now()
+    const nested = nestChangePaths(files, false)
+    const elapsed = Date.now() - started
+    assert.equal(nested.length, 1)
+    const links = nested[0]
+    assert.ok(links.kind === 'dir')
+    const peak = links.children[0]
+    assert.ok(peak.kind === 'dir')
+    assert.equal(peak.children.length, 5000)
+    assert.equal(peak.children[0].kind === 'file' && peak.children[0].name, 'peak-0.json')
+    assert.equal(peak.children[2].kind === 'file' && peak.children[2].name, 'peak-2.json')
+    assert.equal(peak.children[10].kind === 'file' && peak.children[10].name, 'peak-10.json')
+    assert.ok(elapsed < 1500, `nest took ${elapsed}ms`)
+    assert.equal(nestedDirChildren(nested).get('links/3200peak')?.length, 5000)
+  })
+})
+
+describe('pathListSignature', () => {
+  it('changes when order or membership changes', () => {
+    assert.equal(pathListSignature(['a', 'b']), pathListSignature(['a', 'b']))
+    assert.notEqual(pathListSignature(['a', 'b']), pathListSignature(['b', 'a']))
+    assert.notEqual(pathListSignature(['a']), pathListSignature(['a', 'b']))
+  })
+})
+
+describe('indexSectionChanges', () => {
+  it('lets a working-tree entry override an untracked entry for the same path', () => {
+    const map = indexSectionChanges('/repo', 'changes', {
+      index: [],
+      working: [{ uri: { fsPath: '/repo/a.txt' }, status: 5 }],
+      merge: [],
+      untracked: [
+        { uri: { fsPath: '/repo/a.txt' }, status: 7 },
+        { uri: { fsPath: '/repo/b.txt' }, status: 7 },
+      ],
+    })
+    assert.equal(map.get('a.txt')?.status, 5)
+    assert.equal(map.get('b.txt')?.status, 7)
+    assert.equal(map.size, 2)
+  })
+
+  it('indexes staged paths separately from the working tree', () => {
+    const map = indexSectionChanges('/repo', 'staged', {
+      index: [{ uri: { fsPath: '/repo/a.txt' }, status: 0 }],
+      working: [{ uri: { fsPath: '/repo/a.txt' }, status: 5 }],
+      merge: [],
+      untracked: [],
+    })
+    assert.equal(map.get('a.txt')?.status, 0)
+    assert.equal(map.size, 1)
   })
 })

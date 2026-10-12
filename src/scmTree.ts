@@ -134,7 +134,11 @@ export function mergeRepoChanges(
     }))
 }
 
-function insertIntoTree(root: NestedChangeNode[], file: MergedChangeFile): void {
+function insertIntoTree(
+  root: NestedChangeNode[],
+  file: MergedChangeFile,
+  dirs: Map<string, Extract<NestedChangeNode, { kind: 'dir' }>>
+): void {
   const parts = file.relativePath.split('/')
   if (parts.length === 1) {
     root.push({ kind: 'file', relativePath: file.relativePath, name: file.name, states: file.states })
@@ -145,11 +149,10 @@ function insertIntoTree(root: NestedChangeNode[], file: MergedChangeFile): void 
   let built = ''
   for (const segment of dirParts) {
     built = built ? `${built}/${segment}` : segment
-    let dir = level.find(
-      (n): n is Extract<NestedChangeNode, { kind: 'dir' }> => n.kind === 'dir' && n.relativeDir === built
-    )
+    let dir = dirs.get(built)
     if (!dir) {
       dir = { kind: 'dir', relativeDir: built, name: segment, children: [] }
+      dirs.set(built, dir)
       level.push(dir)
     }
     level = dir.children
@@ -191,11 +194,55 @@ export function nestChangePaths(files: MergedChangeFile[], flat: boolean): Neste
       .sort((a, b) => compareHumanNames(a.name, b.name))
   }
   const root: NestedChangeNode[] = []
+  const dirs = new Map<string, Extract<NestedChangeNode, { kind: 'dir' }>>()
   for (const file of files) {
-    insertIntoTree(root, file)
+    insertIntoTree(root, file, dirs)
   }
   sortNested(root)
   return root
+}
+
+/** Order-sensitive fingerprint of a path list. Used to reuse a nested change tree. */
+export function pathListSignature(paths: readonly string[]): string {
+  let h = 2166136261
+  let chars = 0
+  for (const s of paths) {
+    chars += s.length
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i)
+      h = Math.imul(h, 16777619)
+    }
+    h ^= 0xff
+  }
+  const first = paths.length > 0 ? paths[0] : ''
+  const last = paths.length > 0 ? paths[paths.length - 1] : ''
+  return `${paths.length}:${chars}:${h >>> 0}:${first}:${last}`
+}
+
+/** Working-tree entries overwrite untracked entries for the same path. */
+export function indexSectionChanges<T extends GitChangeLike>(
+  repoRoot: string,
+  section: ScmSection,
+  groups: {
+    index: readonly T[]
+    working: readonly T[]
+    merge: readonly T[]
+    untracked: readonly T[]
+  }
+): Map<string, T> {
+  const map = new Map<string, T>()
+  const put = (change: T) => {
+    map.set(relativeRepoPath(repoRoot, change.uri.fsPath), change)
+  }
+  if (section === 'staged') {
+    for (const change of groups.index) put(change)
+  } else if (section === 'merge') {
+    for (const change of groups.merge) put(change)
+  } else {
+    for (const change of groups.untracked) put(change)
+    for (const change of groups.working) put(change)
+  }
+  return map
 }
 
 export function childrenOfChangeDir(
@@ -220,6 +267,22 @@ export function childrenOfChangeDir(
     return undefined
   }
   return walk(nodes) ?? []
+}
+
+/** relativeDir → direct children. Empty string is the section root. */
+export function nestedDirChildren(nodes: NestedChangeNode[]): Map<string, NestedChangeNode[]> {
+  const map = new Map<string, NestedChangeNode[]>()
+  map.set('', nodes)
+  const walk = (list: NestedChangeNode[]): void => {
+    for (const n of list) {
+      if (n.kind === 'dir') {
+        map.set(n.relativeDir, n.children)
+        walk(n.children)
+      }
+    }
+  }
+  walk(nodes)
+  return map
 }
 
 export function stateDescription(states: FileChangeState[]): string {

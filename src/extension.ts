@@ -16,18 +16,23 @@ import {
   sectionContextValue,
   stagePaths,
   unstagePaths,
+  type GitChange,
   type GitRepositoryRef,
 } from './gitRepo'
 import { appendGitignoreLine, toGitignorePattern } from './gitignore'
 import { nodeRootPath, scmSectionTreeId, stableNodeId, type RepoTreeNode } from './repoTreeNode'
 import {
-  childrenOfChangeDir,
   filesForSection,
+  indexSectionChanges,
   mergeRepoChanges,
   nestChangePaths,
+  nestedDirChildren,
+  pathListSignature,
+  relativeRepoPath,
   repoSectionHasFiles,
   SCM_SECTION_LABELS,
   SCM_SECTION_ORDER,
+  type MergedChangeFile,
   type NestedChangeNode,
   type ScmSection,
 } from './scmTree'
@@ -140,6 +145,15 @@ class RepositoryTreeProvider implements vscode.TreeDataProvider<RepoTreeItem> {
   /** `${rootPath}:${relativePath}` → diff stats for Changes-section badges */
   private readonly workingTreeStats = new Map<string, { insertions: number; deletions: number }>()
   private statsRefreshRoots = new Set<string>()
+  private refreshTimer: ReturnType<typeof setTimeout> | undefined
+  /** Last snapshot's rows, so expand/collapse does not walk the whole tree. */
+  private readonly itemsById = new Map<string, RepoTreeItem>()
+  private readonly repoCache = new Map<string, GitRepository | undefined>()
+  private readonly changeIndex = new Map<string, Map<string, GitChange>>()
+  private readonly resourceLetters = new Map<string, Map<string, string | undefined>>()
+  private readonly mergedCache = new Map<string, MergedChangeFile[]>()
+  private readonly mergedPersist = new Map<string, { sig: string; files: MergedChangeFile[] }>()
+  private readonly nestedPersist = new Map<string, { sig: string; levels: Map<string, NestedChangeNode[]> }>()
 
   constructor(private readonly getGit: () => GitApi | undefined) {}
 
@@ -170,10 +184,33 @@ class RepositoryTreeProvider implements vscode.TreeDataProvider<RepoTreeItem> {
   }
 
   refresh(): void {
+    this.cancelScheduledRefresh()
     this._onDidChangeTreeData.fire(undefined)
   }
 
+  /** Coalesce git status bursts. The callback reads the latest repo state. */
+  scheduleRefresh(): void {
+    if (this.refreshTimer !== undefined) {
+      return
+    }
+    this.refreshTimer = setTimeout(() => {
+      this.refreshTimer = undefined
+      this._onDidChangeTreeData.fire(undefined)
+    }, 50)
+  }
+
+  private cancelScheduledRefresh(): void {
+    if (this.refreshTimer !== undefined) {
+      clearTimeout(this.refreshTimer)
+      this.refreshTimer = undefined
+    }
+  }
+
   findItemById(id: string): RepoTreeItem | undefined {
+    const hit = this.itemsById.get(id)
+    if (hit) {
+      return hit
+    }
     const walk = (items: RepoTreeItem[]): RepoTreeItem | undefined => {
       for (const item of items) {
         if (item.treeId === id) {
@@ -190,7 +227,16 @@ class RepositoryTreeProvider implements vscode.TreeDataProvider<RepoTreeItem> {
   }
 
   buildSnapshot(): RepoSnap[] {
+    this.beginSnapshot()
     return this.getChildren().map((item) => this.snapItem(item))
+  }
+
+  private beginSnapshot(): void {
+    this.repoCache.clear()
+    this.changeIndex.clear()
+    this.resourceLetters.clear()
+    this.mergedCache.clear()
+    this.itemsById.clear()
   }
 
   findRepoItem(rootPath: string): RepoTreeItem | undefined {
@@ -220,10 +266,11 @@ class RepositoryTreeProvider implements vscode.TreeDataProvider<RepoTreeItem> {
     this.disposables.push(
       api.onDidOpenRepository((repo) => {
         this.watchRepo(repo)
-        this.refresh()
+        this.scheduleRefresh()
       }),
-      api.onDidCloseRepository(() => {
-        this.refresh()
+      api.onDidCloseRepository((repo) => {
+        this.dropRepoCaches(repo.rootUri.fsPath)
+        this.scheduleRefresh()
       })
     )
     for (const repo of api.repositories) {
@@ -237,7 +284,7 @@ class RepositoryTreeProvider implements vscode.TreeDataProvider<RepoTreeItem> {
       repo.state.onDidChange(() => {
         this.touchWipActivity(repo)
         this.scheduleWorkingTreeStats(repo.rootUri.fsPath)
-        this.refresh()
+        this.scheduleRefresh()
       })
     )
     this.touchWipActivity(repo)
@@ -257,7 +304,7 @@ class RepositoryTreeProvider implements vscode.TreeDataProvider<RepoTreeItem> {
   private async refreshWorkingTreeStats(rootPath: string): Promise<void> {
     const git = this.git ?? this.getGit()
     const repo = git?.repositories.find((r) => r.rootUri.fsPath === rootPath) as GitRepository | undefined
-    if (!repo?.diffBetweenWithStats2) {
+    if (!repo?.diffBetweenWithStats2 || repo.state.workingTreeChanges.length === 0) {
       return
     }
     try {
@@ -278,10 +325,54 @@ class RepositoryTreeProvider implements vscode.TreeDataProvider<RepoTreeItem> {
           deletions: c.deletions ?? 0,
         })
       }
-      this.refresh()
+      this.scheduleRefresh()
     } catch {
       // diff stats are optional decoration
     }
+  }
+
+  private dropRepoCaches(rootPath: string): void {
+    this.mergedPersist.delete(rootPath)
+    const prefix = `${rootPath}\0`
+    for (const key of this.nestedPersist.keys()) {
+      if (key.startsWith(prefix)) {
+        this.nestedPersist.delete(key)
+      }
+    }
+    const statsPrefix = `${rootPath}:`
+    for (const key of this.workingTreeStats.keys()) {
+      if (key.startsWith(statsPrefix)) {
+        this.workingTreeStats.delete(key)
+      }
+    }
+  }
+
+  private repoFor(rootPath: string): GitRepository | undefined {
+    if (this.repoCache.has(rootPath)) {
+      return this.repoCache.get(rootPath)
+    }
+    const git = this.git ?? this.getGit()
+    const repo = git ? (findGitRepository(git, rootPath) as GitRepository | undefined) : undefined
+    this.repoCache.set(rootPath, repo)
+    return repo
+  }
+
+  private cachedChange(rootPath: string, section: ScmSection, relativePath: string): GitChange | undefined {
+    const key = `${rootPath}\0${section}`
+    let index = this.changeIndex.get(key)
+    if (!index) {
+      const repo = this.repoFor(rootPath)
+      index = repo
+        ? indexSectionChanges(rootPath, section, {
+            index: repo.state.indexChanges,
+            working: repo.state.workingTreeChanges,
+            merge: repo.state.mergeChanges,
+            untracked: repo.state.untrackedChanges ?? [],
+          })
+        : new Map()
+      this.changeIndex.set(key, index)
+    }
+    return index.get(relativePath)
   }
 
   private statsForFile(rootPath: string, relativePath: string): { insertions: number; deletions: number } | undefined {
@@ -303,6 +394,7 @@ class RepositoryTreeProvider implements vscode.TreeDataProvider<RepoTreeItem> {
   }
 
   dispose(): void {
+    this.cancelScheduledRefresh()
     this.disposeGitListeners()
     this._onDidChangeTreeData.dispose()
   }
@@ -330,8 +422,9 @@ class RepositoryTreeProvider implements vscode.TreeDataProvider<RepoTreeItem> {
   seedSubtreeExpanded(root: RepoTreeItem): void {
     const queue: RepoTreeItem[] = [root]
     const seen = new Set<string>()
-    while (queue.length > 0) {
-      const item = queue.shift()!
+    let i = 0
+    while (i < queue.length) {
+      const item = queue[i++]
       if (seen.has(item.treeId)) {
         continue
       }
@@ -339,7 +432,27 @@ class RepositoryTreeProvider implements vscode.TreeDataProvider<RepoTreeItem> {
       if (item.collapsibleState !== vscode.TreeItemCollapsibleState.None) {
         this.expansion.markExpanded(item.treeId)
       }
-      for (const child of this.getChildren(item)) {
+      this.enqueueCollapsibleChildren(item, queue)
+    }
+  }
+
+  /** Queue folders and sections. File rows are leaves and are not materialized here. */
+  private enqueueCollapsibleChildren(item: RepoTreeItem, queue: RepoTreeItem[]): void {
+    const node = item.node
+    if (node.kind === 'scmSection' || node.kind === 'scmChangeDir') {
+      const relativeDir = node.kind === 'scmChangeDir' ? node.relativeDir : ''
+      for (const child of this.nodesAtDir(node.rootPath, node.section, relativeDir)) {
+        if (child.kind === 'dir') {
+          queue.push(this.nestedToItem(child, node.rootPath, node.section, item.treeId))
+        }
+      }
+      return
+    }
+    if (node.kind === 'scmFile') {
+      return
+    }
+    for (const child of this.getChildren(item)) {
+      if (child.collapsibleState !== vscode.TreeItemCollapsibleState.None) {
         queue.push(child)
       }
     }
@@ -387,16 +500,10 @@ class RepositoryTreeProvider implements vscode.TreeDataProvider<RepoTreeItem> {
     if (element) {
       const { node, treeId } = element
       if (node.kind === 'scmSection') {
-        return this.changeItemsForSection(node.rootPath, git, node.section, treeId, '')
+        return this.changeItemsForSection(node.rootPath, node.section, treeId, '')
       }
       if (node.kind === 'scmChangeDir') {
-        return this.changeItemsForSection(
-          node.rootPath,
-          git,
-          node.section,
-          treeId,
-          node.relativeDir
-        )
+        return this.changeItemsForSection(node.rootPath, node.section, treeId, node.relativeDir)
       }
       if (node.kind === 'scmFile') {
         return []
@@ -444,18 +551,57 @@ class RepositoryTreeProvider implements vscode.TreeDataProvider<RepoTreeItem> {
     return roots.map((node) => this.toItem(node, isDirty))
   }
 
-  private mergedForRepo(rootPath: string, git: GitApi) {
-    const repo = findGitRepository(git, rootPath)
+  private mergedForRepo(rootPath: string, git: GitApi): MergedChangeFile[] {
+    const hit = this.mergedCache.get(rootPath)
+    if (hit) {
+      return hit
+    }
+    const repo = (findGitRepository(git, rootPath) as GitRepository | undefined) ?? this.repoFor(rootPath)
     if (!repo) {
+      this.mergedCache.set(rootPath, [])
       return []
     }
-    return mergeRepoChanges(
+    const sig = [
+      pathListSignature(repo.state.indexChanges.map((c) => c.uri.fsPath)),
+      pathListSignature(repo.state.workingTreeChanges.map((c) => c.uri.fsPath)),
+      pathListSignature(repo.state.mergeChanges.map((c) => c.uri.fsPath)),
+      pathListSignature((repo.state.untrackedChanges ?? []).map((c) => c.uri.fsPath)),
+    ].join('|')
+    const prev = this.mergedPersist.get(rootPath)
+    if (prev && prev.sig === sig) {
+      this.mergedCache.set(rootPath, prev.files)
+      return prev.files
+    }
+    const files = mergeRepoChanges(
       repo.rootUri.fsPath,
       repo.state.indexChanges,
       repo.state.workingTreeChanges,
       repo.state.mergeChanges,
       repo.state.untrackedChanges ?? []
     )
+    this.mergedPersist.set(rootPath, { sig, files })
+    this.mergedCache.set(rootPath, files)
+    return files
+  }
+
+  private nodesAtDir(rootPath: string, section: ScmSection, relativeDir: string): NestedChangeNode[] {
+    const git = this.git ?? this.getGit()
+    if (!git) {
+      return []
+    }
+    const layout = this.viewOptions.layout
+    const key = `${rootPath}\0${section}\0${layout}`
+    const files = filesForSection(this.mergedForRepo(rootPath, git), section)
+    const sig = pathListSignature(files.map((f) => f.relativePath))
+    const prev = this.nestedPersist.get(key)
+    const levels =
+      prev && prev.sig === sig
+        ? prev.levels
+        : nestedDirChildren(nestChangePaths(files, layout === 'flat'))
+    if (!prev || prev.sig !== sig) {
+      this.nestedPersist.set(key, { sig, levels })
+    }
+    return levels.get(relativeDir) ?? []
   }
 
   private sectionItemsForRepo(rootPath: string, git: GitApi, parentTreeId: string): RepoTreeItem[] {
@@ -480,17 +626,13 @@ class RepositoryTreeProvider implements vscode.TreeDataProvider<RepoTreeItem> {
 
   private changeItemsForSection(
     rootPath: string,
-    git: GitApi,
     section: ScmSection,
     parentTreeId: string,
     relativeDir: string
   ): RepoTreeItem[] {
-    const merged = this.mergedForRepo(rootPath, git)
-    const sectionFiles = filesForSection(merged, section)
-    const nested = nestChangePaths(sectionFiles, this.viewOptions.layout === 'flat')
-    const level =
-      relativeDir === '' ? nested : childrenOfChangeDir(nested, relativeDir)
-    return level.map((n) => this.nestedToItem(n, rootPath, section, parentTreeId))
+    return this.nodesAtDir(rootPath, section, relativeDir).map((n) =>
+      this.nestedToItem(n, rootPath, section, parentTreeId)
+    )
   }
 
   getChildItems(element?: RepoTreeItem): RepoTreeItem[] {
@@ -572,9 +714,19 @@ class RepositoryTreeProvider implements vscode.TreeDataProvider<RepoTreeItem> {
   }
 
   private snapItem(item: RepoTreeItem): RepoSnap {
+    this.itemsById.set(item.treeId, item)
     const node = item.node
     const hasChildren = item.collapsibleState !== vscode.TreeItemCollapsibleState.None
-    const children = hasChildren ? this.getChildren(item).map((child) => this.snapItem(child)) : []
+    const expanded = item.collapsibleState === vscode.TreeItemCollapsibleState.Expanded
+    let children: RepoSnap[] = []
+    if (expanded && (node.kind === 'scmSection' || node.kind === 'scmChangeDir')) {
+      const relativeDir = node.kind === 'scmChangeDir' ? node.relativeDir : ''
+      children = this.nodesAtDir(node.rootPath, node.section, relativeDir).map((child) =>
+        this.snapNested(child, node.rootPath, node.section, item.treeId)
+      )
+    } else if (expanded) {
+      children = this.getChildren(item).map((child) => this.snapItem(child))
+    }
     const kind: RepoSnap['kind'] =
       node.kind === 'scmSection'
         ? 'section'
@@ -606,20 +758,7 @@ class RepositoryTreeProvider implements vscode.TreeDataProvider<RepoTreeItem> {
       snap.relativeDir = node.relativeDir
     }
     if (node.kind === 'scmFile') {
-      snap.relativePath = node.relativePath
-      const git = this.git ?? this.getGit()
-      const repo = git ? findGitRepository(git, node.rootPath) : undefined
-      const change = repo ? findChangeForSection(repo, node.relativePath, node.section) : undefined
-      if (change?.status !== undefined) {
-        const stats =
-          node.section === 'changes' ? this.statsForFile(node.rootPath, node.relativePath) : undefined
-        snap.letter = formatStatusBadge(change.status, stats?.insertions, stats?.deletions)
-        snap.statusClass = statusCssClass(change.status)
-      } else {
-        const resource = repo ? findScmResourceForFile(repo, node.relativePath, node.section) : undefined
-        snap.letter = resource?.letter
-      }
-      snap.dirty = true
+      this.applyFileBadge(snap, node.rootPath, node.section, node.relativePath)
     }
     if (rootPath && (node.kind === 'repo' || node.kind === 'folder')) {
       snap.syncing = this.isSyncingRoot(rootPath)
@@ -635,6 +774,101 @@ class RepositoryTreeProvider implements vscode.TreeDataProvider<RepoTreeItem> {
       snap.behind = head?.behind
     }
     return snap
+  }
+
+  private snapNested(
+    node: NestedChangeNode,
+    rootPath: string,
+    section: ScmSection,
+    parentTreeId: string
+  ): RepoSnap {
+    if (node.kind === 'file') {
+      const treeNode: RepoTreeNode = {
+        kind: 'scmFile',
+        rootPath,
+        section,
+        relativePath: node.relativePath,
+        name: node.name,
+      }
+      const snap: RepoSnap = {
+        id: stableNodeId(treeNode, parentTreeId),
+        kind: 'file',
+        name: node.name,
+        expanded: false,
+        hasChildren: false,
+        dirty: true,
+        rootPath,
+        section,
+        relativePath: node.relativePath,
+        children: [],
+      }
+      this.applyFileBadge(snap, rootPath, section, node.relativePath)
+      return snap
+    }
+    const treeNode: RepoTreeNode = {
+      kind: 'scmChangeDir',
+      rootPath,
+      section,
+      relativeDir: node.relativeDir,
+      name: node.name,
+    }
+    const treeId = stableNodeId(treeNode, parentTreeId)
+    const hasChildren = node.children.length > 0
+    const collapsible = this.expansion.collapsibleState(treeId, hasChildren, scmChangeDirExpandFallback())
+    const item = new RepoTreeItem(treeNode, treeId, collapsible)
+    this.itemsById.set(treeId, item)
+    const expanded = collapsible === vscode.TreeItemCollapsibleState.Expanded
+    return {
+      id: treeId,
+      kind: 'dir',
+      name: node.name,
+      expanded,
+      hasChildren,
+      dirty: false,
+      rootPath,
+      section,
+      relativeDir: node.relativeDir,
+      children: expanded
+        ? node.children.map((child) => this.snapNested(child, rootPath, section, treeId))
+        : [],
+    }
+  }
+
+  private applyFileBadge(snap: RepoSnap, rootPath: string, section: ScmSection, relativePath: string): void {
+    snap.dirty = true
+    snap.relativePath = relativePath
+    snap.section = section
+    const change = this.cachedChange(rootPath, section, relativePath)
+    if (change?.status !== undefined) {
+      const stats = section === 'changes' ? this.statsForFile(rootPath, relativePath) : undefined
+      snap.letter = formatStatusBadge(change.status, stats?.insertions, stats?.deletions)
+      snap.statusClass = statusCssClass(change.status)
+      return
+    }
+    snap.letter = this.letterFromResources(rootPath, section, relativePath)
+  }
+
+  /** One scan of the SCM resource groups, then O(1) lookups for the rest of the snapshot. */
+  private letterFromResources(rootPath: string, section: ScmSection, relativePath: string): string | undefined {
+    const key = `${rootPath}\0${section}`
+    let index = this.resourceLetters.get(key)
+    if (!index) {
+      index = new Map()
+      const repo = this.repoFor(rootPath)
+      const groups =
+        section === 'staged'
+          ? [repo?.indexGroup]
+          : section === 'merge'
+            ? [repo?.mergeGroup]
+            : [repo?.untrackedGroup, repo?.workingTreeGroup]
+      for (const group of groups) {
+        for (const resource of group?.resourceStates ?? []) {
+          index.set(relativeRepoPath(rootPath, resource.resourceUri.fsPath), resource.letter)
+        }
+      }
+      this.resourceLetters.set(key, index)
+    }
+    return index.get(relativePath)
   }
 }
 

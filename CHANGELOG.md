@@ -6,6 +6,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Repository Tree stays responsive when a changes folder contains thousands of files. Only the rows on screen are drawn, and git status updates are coalesced.
+
 ## [0.4.1] - 2026-10-04
 
 ### Fixed
