@@ -1,6 +1,6 @@
 ---
 description: Run install after every extension change (symlink + build bump)
-alwaysApply: true
+alwaysApply: false
 ---
 
 # Local install after changes
