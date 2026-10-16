@@ -162,6 +162,9 @@ function html(): string {
     gap: 4px;
   }
   .name {
+    flex: 1 1 0;
+    min-width: min(4.5em, max-content);
+    max-width: max-content;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -184,21 +187,38 @@ function html(): string {
   .branch {
     display: inline-flex;
     align-items: center;
+    flex: none;
+    box-sizing: border-box;
     gap: 4px;
-    margin-right: 6px;
+    margin-right: 8px;
     opacity: 0.9;
     font-size: 12px;
     white-space: nowrap;
     cursor: pointer;
     border-radius: 3px;
     padding: 0 2px;
+    overflow: hidden;
+  }
+  .branch.share {
+    flex: 1 1 0;
+    min-width: min(5.5em, max-content);
+    max-width: max-content;
+  }
+  .branch svg { flex: none; }
+  .branch-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .branch:hover { background: var(--vscode-toolbar-hoverBackground); }
   .counts {
+    flex: none;
     font-size: 11px;
     margin-right: 2px;
     opacity: 0.95;
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
   button.icon {
     width: 22px;
@@ -214,8 +234,9 @@ function html(): string {
     border-radius: 3px;
   }
   button.icon:hover { background: var(--vscode-toolbar-hoverBackground); }
-  button.chevron { color: var(--vscode-foreground); opacity: 0.8; }
+  button.chevron { flex: none; color: var(--vscode-foreground); opacity: 0.8; }
   button.chevron.empty { visibility: hidden; }
+  .glyph { flex: none; display: inline-flex; }
   .letter {
     min-width: 28px;
     text-align: right;
@@ -404,6 +425,7 @@ function row(node, depth, state) {
   main.appendChild(chevron)
   const isRepo = node.kind === 'repo' || (node.kind === 'folder' && node.rootPath)
   const glyph = document.createElement('span')
+  glyph.className = 'glyph'
   glyph.innerHTML = isRepo ? I.repo : (node.kind === 'folder' || node.kind === 'dir' || node.kind === 'section' ? I.folder : '')
   if (node.kind !== 'file') main.appendChild(glyph)
   const name = document.createElement('span')
@@ -416,6 +438,21 @@ function row(node, depth, state) {
   name.className = nameClass
   name.textContent = node.name
   main.appendChild(name)
+  if (isRepo && node.rootPath) {
+    const branch = document.createElement('span')
+    branch.className = 'branch' + (node.branch ? ' share' : '')
+    branch.title = 'Switch branch'
+    branch.innerHTML = I.branch
+    const label = document.createElement('span')
+    label.className = 'branch-label'
+    label.textContent = node.branch || ''
+    branch.appendChild(label)
+    branch.addEventListener('click', (e) => {
+      e.stopPropagation()
+      postAction('checkout', node)
+    })
+    main.appendChild(branch)
+  }
   if (node.kind === 'file') {
     main.classList.add('clickable')
     main.addEventListener('click', () => postAction('openDiff', node))
@@ -430,18 +467,6 @@ function row(node, depth, state) {
   const actions = document.createElement('div')
   actions.className = 'actions'
   if (isRepo && node.rootPath) {
-    const branch = document.createElement('span')
-    branch.className = 'branch'
-    branch.title = 'Switch branch'
-    branch.innerHTML = I.branch
-    const label = document.createElement('span')
-    label.textContent = node.branch || ''
-    branch.appendChild(label)
-    branch.addEventListener('click', (e) => {
-      e.stopPropagation()
-      postAction('checkout', node)
-    })
-    actions.appendChild(branch)
     const c = counts(node)
     if (c) {
       const span = document.createElement('span')

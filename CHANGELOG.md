@@ -6,6 +6,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- A long repository name and its branch share one flexible cell. Each keeps a minimum width, and whichever fits yields the rest of the cell to the other.
+
 ## [0.4.2] - 2026-10-12
 
 ### Fixed
