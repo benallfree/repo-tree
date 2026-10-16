@@ -141,7 +141,7 @@ class RepositoryTreeProvider implements vscode.TreeDataProvider<RepoTreeItem> {
   private viewOptions: ViewOptions = { ...defaultViewOptions }
   private readonly wipActivity = new Map<string, number>()
   readonly expansion = new TreeExpansionSession()
-  private syncingRootPath?: string
+  private readonly syncingRoots = new Set<string>()
   /** `${rootPath}:${relativePath}` → diff stats for Changes-section badges */
   private readonly workingTreeStats = new Map<string, { insertions: number; deletions: number }>()
   private statsRefreshRoots = new Set<string>()
@@ -158,20 +158,22 @@ class RepositoryTreeProvider implements vscode.TreeDataProvider<RepoTreeItem> {
   constructor(private readonly getGit: () => GitApi | undefined) {}
 
   setSyncingRoot(rootPath: string): void {
-    this.syncingRootPath = rootPath
+    if (this.syncingRoots.has(rootPath)) {
+      return
+    }
+    this.syncingRoots.add(rootPath)
     this.refresh()
   }
 
-  clearSyncingRoot(): void {
-    if (!this.syncingRootPath) {
+  clearSyncingRoot(rootPath: string): void {
+    if (!this.syncingRoots.delete(rootPath)) {
       return
     }
-    this.syncingRootPath = undefined
     this.refresh()
   }
 
   isSyncingRoot(rootPath: string): boolean {
-    return this.syncingRootPath === rootPath
+    return this.syncingRoots.has(rootPath)
   }
 
   setViewOptions(options: ViewOptions): void {
@@ -952,7 +954,7 @@ async function runGitSync(provider: RepositoryTreeProvider, rootPath?: string): 
   try {
     await runGitRepoCommand(getGitApi, 'git.sync', undefined, rootPath)
   } finally {
-    provider.clearSyncingRoot()
+    provider.clearSyncingRoot(rootPath)
   }
 }
 

@@ -95,7 +95,7 @@ export function viewStateStamp(state: RepoViewState): string {
       if (n.statusClass) h1 = mix(h1, n.statusClass)
       if (n.branch) h2 = mix(h2, n.branch)
       h2 ^= (n.ahead ?? 0) + ((n.behind ?? 0) << 8)
-      h2 ^= n.syncing ? 0x100000 : 0
+      if (n.syncing) h2 = mix(h2, n.id)
       h2 ^= n.dirty ? 4 : 8
       h2 ^= n.hasChildren ? 16 : 32
       if (n.expanded && n.children.length) walk(n.children)
@@ -318,6 +318,7 @@ let lastEnd = -1
 let lastCount = -1
 let paintQueued = false
 let paintForce = false
+const spinStarted = new Map()
 
 function flatten(nodes, depth, out) {
   for (let i = 0; i < nodes.length; i++) {
@@ -448,9 +449,16 @@ function row(node, depth, state) {
       span.textContent = c
       actions.appendChild(span)
     }
-    const syncIcon = node.syncing ? I.sync : I.sync
-    const syncBtn = btn(syncIcon, 'Sync', () => postAction('sync', node))
-    if (node.syncing) syncBtn.querySelector('svg').classList.add('spin')
+    const syncBtn = btn(I.sync, 'Sync', () => postAction('sync', node))
+    const syncSvg = syncBtn.querySelector('svg')
+    if (node.syncing) {
+      if (!spinStarted.has(node.id)) spinStarted.set(node.id, performance.now())
+      const phase = ((performance.now() - spinStarted.get(node.id)) / 1000) % 1
+      syncSvg.classList.add('spin')
+      syncSvg.style.animationDelay = '-' + phase + 's'
+    } else {
+      spinStarted.delete(node.id)
+    }
     actions.appendChild(syncBtn)
     actions.appendChild(btn(I.check, 'Commit', () => postAction('commit', node)))
     actions.appendChild(btn(I.refresh, 'Refresh', () => postAction('refresh', node)))
